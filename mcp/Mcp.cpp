@@ -25,7 +25,7 @@ std::vector<std::string> McpServer::toolNames() {
              "scale_bone", "translate_subtree", "rotate_joint",
              "generate_fingers", "list_gaps",
              "load_atlas", "validate_anatomy", "sync_from_atlas",
-             "bind_skin",
+             "bind_skin", "fit_bone", "set_body",
              "save", "load" };
 }
 
@@ -91,6 +91,21 @@ json McpServer::callTool(const std::string& name, const json& a, Model& m, Index
         if (r.is_null()) return { {"ok", false}, {"error", e} };
         mutated = true;   // skin descriptor set + (if fit) skeleton morphed
         return r;
+    }
+    if (name == "fit_bone") {
+        std::string e;
+        json r = BindSkin::fitBone(m, a.value("bone", ""), a.value("margin", 1.05), &e);
+        if (r.is_null()) return { {"ok", false}, {"error", e} };
+        mutated = true;   // bone box resized (+ its mirror)
+        return r;
+    }
+    if (name == "set_body") {
+        Node* n = m.findNode(a.value("bone", ""));
+        if (!n) return { {"ok", false}, {"error", "no bone"} };
+        if (a.contains("size")) n->body.size = v3(a["size"]);
+        if (a.contains("mass")) n->body.mass = a["mass"].get<double>();
+        mutated = true;
+        return { {"ok", true}, {"bone", n->id}, {"size", { n->body.size[0], n->body.size[1], n->body.size[2] }} };
     }
 
     // ---- atlas ----

@@ -14,6 +14,12 @@ struct BindSkin {
     static nlohmann::json bind(Model& m, const std::string& obj,
                                const Vec3& rotDeg, double userScale, const Vec3& offset,
                                bool fitBones, std::string* err);
+
+    // Resize a single bone's box to the local skin mesh (verts nearest to it),
+    // using the Skin descriptor already stored on the model. Keeps the L/R pair
+    // symmetric. `margin` inflates the fit; `slack` biases toward/away the box.
+    static nlohmann::json fitBone(Model& m, const std::string& bone,
+                                  double margin, std::string* err);
 };
 
 } // namespace mass

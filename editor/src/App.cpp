@@ -1177,6 +1177,68 @@ void App::fitSkeletonToSkin() {
     mStatus = "Fitted skeleton to skin (" + std::to_string(fitted) + " limb chains)";
 }
 
+void App::rebindSkin() {
+    if (mSkinRawPos.empty()) { mStatus = "no skin to re-bind"; return; }
+    applySkinPlacement();
+    if (mSimActive) mSim.setModel(mModel);
+    mStatus = "Skin re-bound to skeleton";
+}
+
+// Resize the SELECTED bone's box to the local skin mesh (verts nearest to it),
+// keeping the L/R pair symmetric. Fine per-bone tweak for ribs/fingers/toes.
+void App::fitSelectedBoneToSkin() {
+    if (mSel.type != SelType::Body && mSel.type != SelType::Joint) { mStatus = "select a bone first"; return; }
+    int ti = mSel.index;
+    if (ti < 0 || ti >= (int)mModel.skeleton.size() || mSkinRawPos.empty()) { mStatus = "select a bone + import skin"; return; }
+    if (mModel.skeleton[ti].body.type != "Box") { mStatus = "selected bone is not a Box"; return; }
+    snapshot();
+
+    float s = mSkinAutoScale * std::max(0.01f, mSkinUserScale);
+    std::vector<V3> P(mSkinRawPos.size());
+    for (size_t i = 0; i < P.size(); i++) {
+        const V3& r = mSkinRawPos[i];
+        P[i].x = (r.x - mSkinAutoMeshCtr.x) * s + mSkinAutoSkelCtr.x + mSkinUserOff.x;
+        P[i].z = (r.z - mSkinAutoMeshCtr.z) * s + mSkinAutoSkelCtr.z + mSkinUserOff.z;
+        P[i].y = (r.y - mSkinAutoMeshMinY) * s + mSkinAutoSkelMinY + mSkinUserOff.y;
+    }
+    int nb = (int)mModel.skeleton.size();
+    std::vector<M4> restInv(nb);
+    for (int b = 0; b < nb; b++) restInv[b] = rigidInverse(restBodyMatrix(b));
+    float bs = (float)mSkinParams.bodyScale;
+    auto he = [&](int b){ const Node& n = mModel.skeleton[b];
+        return n.body.type == "Box"
+            ? V3{(float)n.body.size[0]*0.5f*bs,(float)n.body.size[1]*0.5f*bs,(float)n.body.size[2]*0.5f*bs}
+            : V3{(float)n.body.radius*bs,(float)n.body.radius*bs,(float)n.body.radius*bs}; };
+    V3 lmn{1e30f,1e30f,1e30f}, lmx{-1e30f,-1e30f,-1e30f}; int cnt = 0;
+    for (const auto& v : P) {
+        int best = 0; float bestK = 1e30f;
+        for (int b = 0; b < nb; b++) {
+            V3 lp = mulPoint(restInv[b], v); V3 e = he(b);
+            float k = length(V3{ lp.x/std::max(e.x,1e-4f), lp.y/std::max(e.y,1e-4f), lp.z/std::max(e.z,1e-4f) });
+            if (k < bestK) { bestK = k; best = b; }
+        }
+        if (best != ti) continue;
+        V3 lp = mulPoint(restInv[ti], v);
+        lmn.x=std::min(lmn.x,lp.x); lmn.y=std::min(lmn.y,lp.y); lmn.z=std::min(lmn.z,lp.z);
+        lmx.x=std::max(lmx.x,lp.x); lmx.y=std::max(lmx.y,lp.y); lmx.z=std::max(lmx.z,lp.z);
+        cnt++;
+    }
+    if (cnt < 8) { mStatus = "only " + std::to_string(cnt) + " verts near this bone"; return; }
+    Vec3 ns{ std::max(0.01, 2.0*std::max(std::fabs(lmn.x),std::fabs(lmx.x))*1.05),
+             std::max(0.01, 2.0*std::max(std::fabs(lmn.y),std::fabs(lmx.y))*1.05),
+             std::max(0.01, 2.0*std::max(std::fabs(lmn.z),std::fabs(lmx.z))*1.05) };
+    mModel.skeleton[ti].body.size = ns;
+    // keep L/R symmetric
+    std::string id = mModel.skeleton[ti].id;
+    if (!id.empty() && (id.back()=='R' || id.back()=='L')) {
+        std::string mir = id.substr(0,id.size()-1) + (id.back()=='R' ? "L" : "R");
+        for (auto& n : mModel.skeleton) if (n.id == mir && n.body.type=="Box") n.body.size = ns;
+    }
+    syncMeshes(); applySkinPlacement();
+    if (mSimActive) mSim.setModel(mModel);
+    mStatus = "Fitted bone '" + id + "' to skin (" + std::to_string(cnt) + " verts)";
+}
+
 // import button + scale/offset sliders for the imported skin (Tools panel)
 void App::drawSkinControls() {
     ImGui::SeparatorText("Skin (imported mesh)");
@@ -1206,6 +1268,10 @@ void App::drawSkinControls() {
     if (ImGui::Button("Clear skin")) { clearSkin(); return; }
     if (ImGui::Button("Fit skeleton to skin")) fitSkeletonToSkin();
     ImGui::SameLine(); ImGui::TextDisabled("(adapt bones)");
+    if (ImGui::Button("Fit selected bone")) fitSelectedBoneToSkin();
+    ImGui::SameLine();
+    if (ImGui::Button("Re-bind skin")) rebindSkin();
+    ImGui::TextDisabled("select a bone in the tree, gizmo-edit, then Re-bind");
     if (changed) applySkinPlacement();
     ImGui::TextDisabled("%zu tris  |  auto x%.2f", mSkinRawPos.size()/3, mSkinAutoScale);
 }

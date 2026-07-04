@@ -220,4 +220,93 @@ json BindSkin::bind(Model& m, const std::string& obj, const Vec3& rotDeg,
     };
 }
 
+// load + rotate + place the model's skin mesh (same transform as bind), return the
+// placed verts and the per-body rest-inverse (R^T, -R^T t) + half-extents.
+static bool loadPlaced(Model& m, std::vector<V3>& pos,
+                       std::vector<std::array<double,9>>& Rt, std::vector<V3>& Ti,
+                       std::vector<V3>& He, std::string* err) {
+    std::vector<V3> nrm;
+    if (!loadObjSoup(m.skin.obj, pos, nrm, err)) return false;
+    for (auto& p : pos) p = rotEuler(p, m.skin.rotDeg);
+    V3 mn = pos[0], mx = pos[0];
+    for (const auto& p : pos) for (int a=0;a<3;a++){ mn[a]=std::min(mn[a],p[a]); mx[a]=std::max(mx[a],p[a]); }
+    V3 smn{1e30,1e30,1e30}, smx{-1e30,-1e30,-1e30};
+    for (const auto& n : m.skeleton) {
+        const auto& t = n.body.t.translation;
+        double he = (n.body.type=="Box") ? 0.5*std::max({n.body.size[0],n.body.size[1],n.body.size[2]}) : n.body.radius;
+        for (int a=0;a<3;a++){ smn[a]=std::min(smn[a],t[a]-he); smx[a]=std::max(smx[a],t[a]+he); }
+    }
+    double sc = (std::max(1e-4,smx[1]-smn[1])/std::max(1e-4,mx[1]-mn[1])) * std::max(0.01, m.skin.userScale);
+    V3 mCtr{(mn[0]+mx[0])*0.5,0,(mn[2]+mx[2])*0.5}, sCtr{(smn[0]+smx[0])*0.5,0,(smn[2]+smx[2])*0.5};
+    for (auto& p : pos) {
+        p[0]=(p[0]-mCtr[0])*sc+sCtr[0]+m.skin.offset[0];
+        p[2]=(p[2]-mCtr[2])*sc+sCtr[2]+m.skin.offset[2];
+        p[1]=(p[1]-mn[1])*sc+smn[1]+m.skin.offset[1];
+    }
+    int nb = (int)m.skeleton.size();
+    Rt.resize(nb); Ti.resize(nb); He.resize(nb);
+    for (int b=0;b<nb;b++) {
+        const auto& L = m.skeleton[b].body.t.linear;
+        std::array<double,9> rt{ L[0],L[3],L[6], L[1],L[4],L[7], L[2],L[5],L[8] };
+        Rt[b]=rt; const auto& t=m.skeleton[b].body.t.translation;
+        Ti[b]={ -(rt[0]*t[0]+rt[1]*t[1]+rt[2]*t[2]), -(rt[3]*t[0]+rt[4]*t[1]+rt[5]*t[2]), -(rt[6]*t[0]+rt[7]*t[1]+rt[8]*t[2]) };
+        const auto& n=m.skeleton[b];
+        He[b]=(n.body.type=="Box")?V3{n.body.size[0]*0.5,n.body.size[1]*0.5,n.body.size[2]*0.5}:V3{n.body.radius,n.body.radius,n.body.radius};
+        for(int a=0;a<3;a++) He[b][a]=std::max(1e-4,He[b][a]);
+    }
+    return true;
+}
+
+static std::string mirrorName(const std::string& id) {
+    if (id.empty()) return "";
+    char c = id.back();
+    if (c=='R') return id.substr(0,id.size()-1)+"L";
+    if (c=='L') return id.substr(0,id.size()-1)+"R";
+    return "";
+}
+
+json BindSkin::fitBone(Model& m, const std::string& bone, double margin, std::string* err) {
+    if (!m.skin.present || m.skin.obj.empty()) { if(err)*err="no skin on model (bind_skin first)"; return json(); }
+    if (m.skeleton.empty()) { if(err)*err="no skeleton"; return json(); }
+    int nb = (int)m.skeleton.size();
+    auto idxOf=[&](const std::string& s){ for(int i=0;i<nb;i++) if(m.skeleton[i].id==s) return i; return -1; };
+    int ti = idxOf(bone);
+    if (ti<0) { if(err)*err="no bone '"+bone+"'"; return json(); }
+    if (m.skeleton[ti].body.type != "Box") { if(err)*err="bone '"+bone+"' is not a Box"; return json(); }
+
+    std::vector<V3> pos; std::vector<std::array<double,9>> Rt; std::vector<V3> Ti, He;
+    if (!loadPlaced(m, pos, Rt, Ti, He, err)) return json();
+
+    // AABB (in the target's rest-local frame) of the verts whose nearest body is the target
+    V3 lmn{1e30,1e30,1e30}, lmx{-1e30,-1e30,-1e30}; int cnt=0;
+    for (const auto& p : pos) {
+        int best=0; double bestK=1e30;
+        for (int b=0;b<nb;b++) {
+            double lx=Rt[b][0]*p[0]+Rt[b][1]*p[1]+Rt[b][2]*p[2]+Ti[b][0];
+            double ly=Rt[b][3]*p[0]+Rt[b][4]*p[1]+Rt[b][5]*p[2]+Ti[b][1];
+            double lz=Rt[b][6]*p[0]+Rt[b][7]*p[1]+Rt[b][8]*p[2]+Ti[b][2];
+            double k=std::sqrt((lx/He[b][0])*(lx/He[b][0])+(ly/He[b][1])*(ly/He[b][1])+(lz/He[b][2])*(lz/He[b][2]));
+            if (k<bestK){bestK=k;best=b;}
+        }
+        if (best!=ti) continue;
+        double lx=Rt[ti][0]*p[0]+Rt[ti][1]*p[1]+Rt[ti][2]*p[2]+Ti[ti][0];
+        double ly=Rt[ti][3]*p[0]+Rt[ti][4]*p[1]+Rt[ti][5]*p[2]+Ti[ti][1];
+        double lz=Rt[ti][6]*p[0]+Rt[ti][7]*p[1]+Rt[ti][8]*p[2]+Ti[ti][2];
+        lmn[0]=std::min(lmn[0],lx); lmn[1]=std::min(lmn[1],ly); lmn[2]=std::min(lmn[2],lz);
+        lmx[0]=std::max(lmx[0],lx); lmx[1]=std::max(lmx[1],ly); lmx[2]=std::max(lmx[2],lz);
+        cnt++;
+    }
+    if (cnt < 8) { if(err)*err="only "+std::to_string(cnt)+" verts near '"+bone+"' — nothing to fit"; return json(); }
+
+    // symmetric full extent about the body origin (box is centered on the body)
+    Vec3 newSize;
+    for (int a=0;a<3;a++) newSize[a] = std::max(0.01, 2.0 * std::max(std::fabs(lmn[a]), std::fabs(lmx[a])) * margin);
+    m.skeleton[ti].body.size = newSize;
+    std::string mir = mirrorName(bone); int mi = mir.empty()?-1:idxOf(mir);
+    if (mi>=0 && m.skeleton[mi].body.type=="Box") m.skeleton[mi].body.size = newSize;  // keep L/R symmetric
+
+    return json{ {"bone", bone}, {"mirror", mir}, {"verts", cnt},
+                 {"newSize", { newSize[0], newSize[1], newSize[2] }} };
+}
+
 } // namespace mass
