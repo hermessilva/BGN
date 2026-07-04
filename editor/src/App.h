@@ -5,6 +5,7 @@
 #include "SimBridge.h"
 #include "TrainBridge.h"
 #include "SkinGen.h"
+#include "RiggedMesh.h"
 #include <vector>
 #include <string>
 #include <deque>
@@ -37,6 +38,7 @@ public:
     void generateSkin();                            // generate the skin now (public trigger)
     void startKinematicSim();                        // start live BVH playback (public trigger)
     void beginFill(const std::string& name);         // start a fill generation (public trigger)
+    void loadRiggedCharacter(const std::string& path); // load a rigged FBX/GLB (public trigger)
 
 private:
     GLFWwindow* mWin = nullptr;
@@ -86,6 +88,18 @@ private:
     void fitSelectedBoneToSkin();          // resize the selected bone box to its local mesh (L/R kept symmetric)
     void rebindSkin();                     // re-bind skin to the current skeleton (after manual gizmo edits)
     bool mHideRig = false;                 // optional: hide bones/muscles when a skin is shown (off = Visibility checkboxes rule)
+
+    // rigged (skinned+animated) character loaded from FBX/GLB: plays its own clip
+    RiggedMesh mRigged;
+    unsigned mRigTex = 0;
+    bool mShowRigged = false, mRigUseTex = true, mRigPlay = true;
+    V3 mRigColor{1.0f, 1.0f, 1.0f};        // tint (multiplies the texture) / flat color
+    double mRigTime = 0.0, mRigLastClock = -1.0;
+    M4 mRigPlacement;                      // scale/translate to fit the scene
+    std::vector<V3> mRigPos, mRigNrm;      // skinned output (reused buffers)
+    void loadRiggedFbx(const std::string& path);
+    void importRiggedDialog();
+    void drawRiggedControls();
 
     // fills (generated skin/tissue envelopes), async generation with progress
     std::atomic<float> mFillProgress{0.0f};

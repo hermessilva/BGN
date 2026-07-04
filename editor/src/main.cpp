@@ -8,6 +8,10 @@
 #include <thread>
 #include <chrono>
 #include <cstdlib>
+#include <set>
+#include <assimp/Importer.hpp>
+#include <assimp/scene.h>
+#include <assimp/postprocess.h>
 #include "App.h"
 #include "Bootstrap.h"
 #include "SimBridge.h"
@@ -23,6 +27,37 @@ static std::string rootFromMeta(const std::string& meta) {
 
 int main(int argc, char** argv) {
     // ---- headless CLI ----
+    if (argc >= 3 && std::string(argv[1]) == "--fbxinfo") {
+        Assimp::Importer imp;
+        const aiScene* sc = imp.ReadFile(argv[2], aiProcess_Triangulate);
+        if (!sc) { std::fprintf(stderr, "read: %s\n", imp.GetErrorString()); return 1; }
+        std::printf("meshes=%u  materials=%u  animations=%u  textures(embedded)=%u\n",
+                    sc->mNumMeshes, sc->mNumMaterials, sc->mNumAnimations, sc->mNumTextures);
+        // collect bones from meshes
+        std::set<std::string> boneNames;
+        unsigned totalV = 0, totalF = 0;
+        for (unsigned mi = 0; mi < sc->mNumMeshes; mi++) {
+            const aiMesh* m = sc->mMeshes[mi];
+            totalV += m->mNumVertices; totalF += m->mNumFaces;
+            std::printf("  mesh[%u] '%s' v=%u f=%u bones=%u uv=%d\n", mi,
+                        m->mName.C_Str(), m->mNumVertices, m->mNumFaces, m->mNumBones, m->HasTextureCoords(0));
+            for (unsigned b = 0; b < m->mNumBones; b++) boneNames.insert(m->mBones[b]->mName.C_Str());
+        }
+        std::printf("total verts=%u faces=%u  unique bones=%zu\n", totalV, totalF, boneNames.size());
+        std::printf("BONES: ");
+        for (auto& n : boneNames) std::printf("%s ", n.c_str());
+        std::printf("\n");
+        for (unsigned a = 0; a < sc->mNumAnimations; a++) {
+            const aiAnimation* an = sc->mAnimations[a];
+            std::printf("ANIM[%u] '%s' dur=%.1f tps=%.1f channels=%u\n", a,
+                        an->mName.C_Str(), an->mDuration, an->mTicksPerSecond, an->mNumChannels);
+        }
+        for (unsigned mt = 0; mt < sc->mNumMaterials; mt++) {
+            aiString p; if (sc->mMaterials[mt]->GetTexture(aiTextureType_DIFFUSE, 0, &p) == AI_SUCCESS)
+                std::printf("MAT[%u] diffuse='%s'\n", mt, p.C_Str());
+        }
+        return 0;
+    }
     if (argc >= 2 && std::string(argv[1]) == "--roundtrip" && argc >= 4) {
         std::string err;
         auto m = ed::BootstrapFromLegacy(argv[2], rootFromMeta(argv[2]), &err);
@@ -122,6 +157,7 @@ int main(int argc, char** argv) {
         else if (a == "--skin") genSkin = true;
         else if (a == "--sim") app.startKinematicSim();
         else if (a == "--genfill") app.beginFill("default");
+        else if (a == "--rig" && i + 1 < argc) app.loadRiggedCharacter(argv[++i]);
     }
     if (genSkin) app.generateSkin();
 

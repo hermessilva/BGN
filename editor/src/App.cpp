@@ -729,6 +729,18 @@ void App::drawScene() {
         mRen.drawSkin(ident, V3{0.86f, 0.66f, 0.56f});
     }
 
+    // rigged FBX character playing its own clip (CPU linear-blend skinning)
+    if (mShowRigged && mRigged.loaded()) {
+        double now = glfwGetTime();
+        if (mRigLastClock < 0) mRigLastClock = now;
+        double dt = now - mRigLastClock; mRigLastClock = now;
+        if (dt > 0.1) dt = 0.1;
+        if (mRigPlay) mRigTime += dt;
+        mRigged.evaluate(mRigTime, mRigPos, mRigNrm);
+        mRen.setRiggedMesh(mRigPos, mRigNrm, mRigged.uv, mRigged.indices);
+        mRen.drawRigged(mRigPlacement, mRigTex, mRigUseTex, mRigColor);
+    }
+
     // light markers (visible + clickable icons)
     for (int i = 0; mShowLightMarkers && i < (int)mModel.lights.size(); i++) {
         const Light& L = mModel.lights[i];
@@ -1184,6 +1196,59 @@ void App::rebindSkin() {
     applySkinPlacement();
     if (mSimActive) mSim.setModel(mModel);
     mStatus = "Skin re-bound to skeleton";
+}
+
+// Load an artist-rigged character (FBX/GLB): skin + bones + its own animation +
+// texture. Plays its own clip via CPU skinning; scaled to the skeleton height.
+void App::loadRiggedFbx(const std::string& path) {
+    std::string err;
+    if (!mRigged.load(path, &err)) { mStatus = "rigged load failed: " + err; return; }
+    mRigTex = mRigged.texRGBA.empty() ? 0 : mRen.uploadTexture(mRigged.texW, mRigged.texH, mRigged.texRGBA.data());
+    // fit the bind-pose bbox to the skeleton (scale to height, center feet)
+    V3 mn = mRigged.basePos[0], mx = mn;
+    for (const auto& p : mRigged.basePos) {
+        mn.x=std::min(mn.x,p.x); mn.y=std::min(mn.y,p.y); mn.z=std::min(mn.z,p.z);
+        mx.x=std::max(mx.x,p.x); mx.y=std::max(mx.y,p.y); mx.z=std::max(mx.z,p.z);
+    }
+    V3 smn{1e30f,1e30f,1e30f}, smx{-1e30f,-1e30f,-1e30f};
+    for (const auto& n : mModel.skeleton) {
+        V3 c{(float)n.body.t.translation[0],(float)n.body.t.translation[1],(float)n.body.t.translation[2]};
+        float he = n.body.type=="Box" ? 0.5f*(float)std::max({n.body.size[0],n.body.size[1],n.body.size[2]}) : (float)n.body.radius;
+        smn.x=std::min(smn.x,c.x-he); smn.y=std::min(smn.y,c.y-he); smn.z=std::min(smn.z,c.z-he);
+        smx.x=std::max(smx.x,c.x+he); smx.y=std::max(smx.y,c.y+he); smx.z=std::max(smx.z,c.z+he);
+    }
+    if (smx.y < smn.y) { smn = {-0.5f,0,-0.5f}; smx = {0.5f,1.7f,0.5f}; }  // no skeleton -> ~human
+    float s = std::max(1e-4f, smx.y-smn.y) / std::max(1e-4f, mx.y-mn.y);
+    V3 mCtr{(mn.x+mx.x)*0.5f,0,(mn.z+mx.z)*0.5f}, sCtr{(smn.x+smx.x)*0.5f,0,(smn.z+smx.z)*0.5f};
+    M4 pl; pl.m[0]=s; pl.m[5]=s; pl.m[10]=s;
+    pl.m[12]=sCtr.x - s*mCtr.x; pl.m[13]=smn.y - s*mn.y; pl.m[14]=sCtr.z - s*mCtr.z;
+    mRigPlacement = pl;
+    mShowRigged = true; mRigPlay = true; mRigTime = 0; mRigLastClock = -1;
+    mStatus = "Rigged character: " + std::to_string(mRigged.basePos.size()) + " verts, " +
+              std::to_string(mRigged.bones.size()) + " bones, anim " +
+              std::to_string(mRigged.animSeconds()) + "s" + (mRigTex?", textured":"");
+}
+
+void App::loadRiggedCharacter(const std::string& path) { loadRiggedFbx(path); }
+
+void App::importRiggedDialog() {
+    std::string p = openFileDialog("Rigged character (fbx/glb/gltf)\0*.fbx;*.glb;*.gltf;*.dae\0All\0*.*\0");
+    if (!p.empty()) loadRiggedFbx(p);
+}
+
+void App::drawRiggedControls() {
+    ImGui::SeparatorText("Rigged character (FBX/GLB)");
+    if (ImGui::Button("Load rigged FBX...")) importRiggedDialog();
+    if (!mRigged.loaded()) { ImGui::TextDisabled("skin + bones + walk anim + texture"); return; }
+    ImGui::SameLine(); ImGui::Checkbox("Show##rig", &mShowRigged);
+    ImGui::Checkbox("Play", &mRigPlay); ImGui::SameLine();
+    ImGui::Checkbox("Texture", &mRigUseTex);
+    ImGui::ColorEdit3("Color/tint", &mRigColor.x);
+    float dur = (float)mRigged.animSeconds();
+    if (dur > 0) { float t = (float)std::fmod(mRigTime, dur);
+        if (ImGui::SliderFloat("Time", &t, 0.0f, dur, "%.2fs")) { mRigTime = t; mRigPlay = false; } }
+    ImGui::TextDisabled("%zu verts  %zu bones  %.1fs clip%s", mRigged.basePos.size(),
+                        mRigged.bones.size(), mRigged.animSeconds(), mRigTex?"  (textured)":"  (no tex)");
 }
 
 // Resize the SELECTED bone's box to the local skin mesh (verts nearest to it),

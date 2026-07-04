@@ -37,6 +37,7 @@
     <ClCompile Include="src\MassModel.cpp" />
     <ClCompile Include="src\Panels.cpp" />
     <ClCompile Include="src\Renderer.cpp" />
+    <ClCompile Include="src\RiggedMesh.cpp" />
     <ClCompile Include="src\SimBridge.cpp" />
     <ClCompile Include="src\SkinGen.cpp" />
     <ClCompile Include="src\TrainBridge.cpp" />

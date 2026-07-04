@@ -40,6 +40,12 @@ struct Renderer {
     void setSkinMesh(const std::vector<V3>& pos, const std::vector<V3>& nrm);
     void drawSkin(const M4& model, const V3& color);   // queued for this frame
     bool hasSkin() const { return mSkinCount > 0; }
+
+    // textured skinned character (indexed pos+nrm+uv) driven by CPU skinning
+    unsigned uploadTexture(int w, int h, const unsigned char* rgba);   // -> GL texture id
+    void setRiggedMesh(const std::vector<V3>& pos, const std::vector<V3>& nrm,
+                       const std::vector<float>& uv, const std::vector<unsigned>& idx);
+    void drawRigged(const M4& model, unsigned tex, bool useTex, const V3& color);
     void axes(const M4& model, float scale);
     void grid(float size, int divs, const V3& color);
     void checkerGround(float size, int divs, const V3& a, const V3& b);
@@ -64,6 +70,9 @@ private:
     std::vector<MeshCmd> mMeshCmds;
     unsigned mSkinVao = 0, mSkinVbo = 0; int mSkinCount = 0;
     struct { bool active = false; M4 model; V3 color; } mSkinCmd;
+    // textured rigged character
+    unsigned mProgTex = 0, mRigVao = 0, mRigVbo = 0, mRigEbo = 0; int mRigIdx = 0;
+    struct { bool active = false; M4 model; unsigned tex = 0; bool useTex = true; V3 color; } mRigCmd;
     void push(std::vector<Vtx>& buf, const V3& p, const V3& c, float a);
     void tri(const V3& a, const V3& b, const V3& c, const V3& n, const V3& col, float al);
     void draw(const std::vector<Vtx>& buf, unsigned mode);

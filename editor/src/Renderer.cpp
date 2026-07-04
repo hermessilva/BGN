@@ -68,6 +68,37 @@ void main(){
 }
 )";
 
+// textured lit shader (rigged character): pos+nrm+uv, samples a diffuse texture
+static const char* kVST = R"(#version 330 core
+layout(location=0) in vec3 aPos;
+layout(location=1) in vec3 aNrm;
+layout(location=2) in vec2 aUV;
+uniform mat4 uVP; uniform mat4 uModel;
+out vec3 vN; out vec3 vP; out vec2 vUV;
+void main(){ vec4 wp=uModel*vec4(aPos,1.0); vP=wp.xyz; vN=mat3(uModel)*aNrm; vUV=aUV; gl_Position=uVP*wp; }
+)";
+static const char* kFST = R"(#version 330 core
+in vec3 vN; in vec3 vP; in vec2 vUV;
+uniform vec3 uEye; uniform float uAmb;
+uniform int uNumLights; uniform int uType[8]; uniform vec3 uLdir[8]; uniform vec3 uLcol[8];
+uniform int uUseTex; uniform vec3 uColorU; uniform sampler2D uTex;
+out vec4 FragColor;
+void main(){
+    vec3 N=normalize(vN); vec3 V=normalize(uEye-vP);
+    vec3 base = (uUseTex==1) ? texture(uTex, vUV).rgb * uColorU : uColorU;
+    vec3 c = base*uAmb;
+    for(int i=0;i<uNumLights && i<8;i++){
+        vec3 toL; float at=1.0;
+        if(uType[i]==0){ toL=normalize(uLdir[i]); }
+        else{ vec3 d=uLdir[i]-vP; float dist=length(d); toL=d/max(dist,1e-4); at=1.0/(1.0+0.25*dist*dist); }
+        float diff=dot(N,toL)*0.5+0.5; diff*=diff;
+        c += base*uLcol[i]*diff*at;
+    }
+    float rim=pow(1.0-max(dot(N,V),0.0),2.0)*0.10;
+    FragColor=vec4(min(c+rim,vec3(1.0)),1.0);
+}
+)";
+
 static unsigned compile(unsigned type, const char* src){
     unsigned s = glCreateShader(type);
     glShaderSource(s,1,&src,nullptr); glCompileShader(s);
@@ -84,6 +115,7 @@ static unsigned link(const char* vs, const char* fs){
 bool Renderer::init(){
     mProg = link(kVS, kFS);
     mProgLit = link(kVSL, kFSL);
+    mProgTex = link(kVST, kFST);
     glGenVertexArrays(1,&mVao); glGenBuffers(1,&mVbo);
     glGenVertexArrays(1,&mVaoT); glGenBuffers(1,&mVboT);
     glEnable(GL_PROGRAM_POINT_SIZE);
@@ -129,7 +161,48 @@ void Renderer::beginTarget(int w, int h){
 }
 void Renderer::endTarget(){ glBindFramebuffer(GL_FRAMEBUFFER, 0); }
 
-void Renderer::begin(const M4& vp, const V3& eye){ mVP=vp; mEye=eye; mLines.clear(); mPoints.clear(); mTris.clear(); mMeshCmds.clear(); mSkinCmd.active=false; }
+void Renderer::begin(const M4& vp, const V3& eye){ mVP=vp; mEye=eye; mLines.clear(); mPoints.clear(); mTris.clear(); mMeshCmds.clear(); mSkinCmd.active=false; mRigCmd.active=false; }
+
+unsigned Renderer::uploadTexture(int w, int h, const unsigned char* rgba){
+    if (w<=0 || h<=0 || !rgba) return 0;
+    unsigned t; glGenTextures(1,&t); glBindTexture(GL_TEXTURE_2D,t);
+    glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA8,w,h,0,GL_RGBA,GL_UNSIGNED_BYTE,rgba);
+    glGenerateMipmap(GL_TEXTURE_2D);
+    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR_MIPMAP_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,GL_REPEAT);
+    glBindTexture(GL_TEXTURE_2D,0);
+    return t;
+}
+void Renderer::setRiggedMesh(const std::vector<V3>& pos, const std::vector<V3>& nrm,
+                             const std::vector<float>& uv, const std::vector<unsigned>& idx){
+    if (pos.empty() || pos.size()!=nrm.size() || uv.size()!=pos.size()*2) { mRigIdx=0; return; }
+    if (!mRigVao) glGenVertexArrays(1,&mRigVao);
+    if (!mRigVbo) glGenBuffers(1,&mRigVbo);
+    if (!mRigEbo) glGenBuffers(1,&mRigEbo);
+    std::vector<float> data; data.reserve(pos.size()*8);
+    for (size_t i=0;i<pos.size();i++){
+        data.push_back(pos[i].x); data.push_back(pos[i].y); data.push_back(pos[i].z);
+        data.push_back(nrm[i].x); data.push_back(nrm[i].y); data.push_back(nrm[i].z);
+        data.push_back(uv[i*2]);  data.push_back(uv[i*2+1]);
+    }
+    glBindVertexArray(mRigVao);
+    glBindBuffer(GL_ARRAY_BUFFER,mRigVbo);
+    glBufferData(GL_ARRAY_BUFFER, data.size()*sizeof(float), data.data(), GL_DYNAMIC_DRAW);
+    glVertexAttribPointer(0,3,GL_FLOAT,GL_FALSE,8*sizeof(float),(void*)0); glEnableVertexAttribArray(0);
+    glVertexAttribPointer(1,3,GL_FLOAT,GL_FALSE,8*sizeof(float),(void*)(3*sizeof(float))); glEnableVertexAttribArray(1);
+    glVertexAttribPointer(2,2,GL_FLOAT,GL_FALSE,8*sizeof(float),(void*)(6*sizeof(float))); glEnableVertexAttribArray(2);
+    if ((int)idx.size() != mRigIdx) {
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER,mRigEbo);
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, idx.size()*sizeof(unsigned), idx.data(), GL_STATIC_DRAW);
+    }
+    glBindVertexArray(0);
+    mRigIdx = (int)idx.size();
+}
+void Renderer::drawRigged(const M4& model, unsigned tex, bool useTex, const V3& color){
+    mRigCmd = { true, model, tex, useTex, color };
+}
 
 unsigned Renderer::uploadMesh(const std::vector<V3>& pos, const std::vector<V3>& nrm){
     if (pos.empty() || pos.size() != nrm.size()) return 0;
@@ -330,6 +403,32 @@ void Renderer::flush(){
             glBindVertexArray(mSkinVao);
             glDrawArrays(GL_TRIANGLES,0,mSkinCount);
         }
+    }
+    // textured rigged character (indexed, its own shader)
+    if (mRigCmd.active && mRigIdx > 0) {
+        glUseProgram(mProgTex);
+        glUniformMatrix4fv(glGetUniformLocation(mProgTex,"uVP"),1,GL_FALSE,mVP.data());
+        glUniformMatrix4fv(glGetUniformLocation(mProgTex,"uModel"),1,GL_FALSE,mRigCmd.model.data());
+        glUniform3f(glGetUniformLocation(mProgTex,"uEye"),mEye.x,mEye.y,mEye.z);
+        glUniform1f(glGetUniformLocation(mProgTex,"uAmb"), mAmbient);
+        int n2 = (int)mLightsGPU.size(); if (n2>8) n2=8;
+        glUniform1i(glGetUniformLocation(mProgTex,"uNumLights"), n2);
+        if (n2>0){
+            int types[8]; float dir[24], col[24];
+            for(int i=0;i<n2;i++){ types[i]=mLightsGPU[i].type;
+                dir[i*3]=mLightsGPU[i].dir.x; dir[i*3+1]=mLightsGPU[i].dir.y; dir[i*3+2]=mLightsGPU[i].dir.z;
+                col[i*3]=mLightsGPU[i].color.x; col[i*3+1]=mLightsGPU[i].color.y; col[i*3+2]=mLightsGPU[i].color.z; }
+            glUniform1iv(glGetUniformLocation(mProgTex,"uType[0]"), n2, types);
+            glUniform3fv(glGetUniformLocation(mProgTex,"uLdir[0]"), n2, dir);
+            glUniform3fv(glGetUniformLocation(mProgTex,"uLcol[0]"), n2, col);
+        }
+        bool useTex = mRigCmd.useTex && mRigCmd.tex != 0;
+        glUniform1i(glGetUniformLocation(mProgTex,"uUseTex"), useTex?1:0);
+        glUniform3f(glGetUniformLocation(mProgTex,"uColorU"), mRigCmd.color.x, mRigCmd.color.y, mRigCmd.color.z);
+        if (useTex) { glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D, mRigCmd.tex);
+                      glUniform1i(glGetUniformLocation(mProgTex,"uTex"), 0); }
+        glBindVertexArray(mRigVao);
+        glDrawElements(GL_TRIANGLES, mRigIdx, GL_UNSIGNED_INT, 0);
     }
     // lines/points (flat) on top (depth-tested, like the reference viewer)
     glUseProgram(mProg);

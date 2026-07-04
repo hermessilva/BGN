@@ -44,6 +44,7 @@ void App::drawMenuBar() {
         if (ImGui::BeginMenu("Anatomy")) {
             if (ImGui::MenuItem("Import OpenSim atlas (.osim)...")) importOsim();
             if (ImGui::MenuItem("Import mesh as skin (obj/glb/fbx/stl)...")) importSkinMesh();
+            if (ImGui::MenuItem("Load rigged character (FBX/GLB, plays its clip)...")) importRiggedDialog();
             if (ImGui::MenuItem("Mirror muscle L<->R")) mirrorSelectedMuscle();
             ImGui::EndMenu();
         }
@@ -179,6 +180,7 @@ void App::drawToolbar() {
         ImGui::Text("t = %.2fs  |  %s%s", mSim.simTime(), mSim.status().c_str(), dirty ? "  (edits pending)" : "");
     }
     drawSkinControls();
+    drawRiggedControls();
     ImGui::End();
 }
 
