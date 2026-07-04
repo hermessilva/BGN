@@ -46,3 +46,9 @@ endif()
 if(GAITNET_BUILD_EDITOR)
   add_subdirectory( editor )
 endif()
+
+# Model-editing MCP server (pure C++17 over the .mass project; no DART/Python).
+option(GAITNET_BUILD_MCP "Build the .mass MCP server" ON)
+if(GAITNET_BUILD_MCP)
+  add_subdirectory( mcp )
+endif()

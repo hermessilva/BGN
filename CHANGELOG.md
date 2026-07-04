@@ -7,6 +7,39 @@ authors (Jungnam Park, Moon Seok Park, Jehee Lee, Jungdam Won).
 
 The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased] — Model-editing MCP server (`mcp/`)
+
+Copied MASS-Easy's `libmassedit` MCP into this project and re-targeted it to the
+BidirectionalGaitNet `.mass` schema, so an AI/MCP client can query and edit the
+musculoskeletal model programmatically. Pure C++17 (no DART, no Python): only
+nlohmann/json, tinyxml2 (`.osim` atlas) and Boost.Asio (TCP transport).
+
+### Added
+- `mcp/` — the model-editing library + a standalone MCP server
+  (`build/mcp/<Config>/gaitnet-mcp.exe`). `scripts/mcp.ps1` launches it.
+- Modules: MassModel, Index (generational handles + reverse indices + group
+  selector), Query, Kinematics (FK), DofMap, Batch (scale_bone/translate_subtree),
+  Complete (finger generation), Atlas (.osim), Groom (hair PBD), Mcp (JSON-RPC
+  dispatch + single-writer `McpQueue`).
+- Tools: `describe_model`, `get_node`, `get_muscle`, `select`, `muscles_of_body`,
+  `muscles_crossing_joint`, `scale_bone`, `translate_subtree`, `rotate_joint`,
+  `generate_fingers`, `list_gaps`, `load_atlas`, `validate_anatomy`,
+  `sync_from_atlas`, `save`, `load`.
+- Top-level CMake option `GAITNET_BUILD_MCP` (ON).
+
+### Changed
+- `mcp/MassModel`: merged this project's GaitNet extensions (per-joint `kp`/`kv`,
+  the `EnvConfig` env.xml block, the `<parameter>` block) into the model + JSON so
+  the MCP round-trips a `.mass` produced by the editor without dropping data.
+
+### Verified
+- `gaitnet-mcp data/project.mass 8766` loads (23 bones, 304 muscles); a TCP client
+  gets valid `initialize`, `tools/list` and `tools/call describe_model` responses.
+
+### Not yet wired
+- In-process Arena bridge (`McpQueue` drained in `App::frame` + an Asio transport)
+  so an AI can edit the live model while the editor is open.
+
 ## [Unreleased] — Visual character editor (`editor/`)
 
 Added a standalone Arena-style 3D character editor that edits this project's native
