@@ -46,8 +46,6 @@ public:
     void exportBVH(const std::vector<Eigen::VectorXd> &motion, const dart::dynamics::SkeletonPtr &skel);
 
 private:
-    py::object mns;
-    py::object loading_network;
 
     void update(bool isSave = false);
     void reset();
@@ -143,7 +141,8 @@ private:
     std::vector<std::string> mBGNList;
     std::vector<std::string> mC3DList;
 
-    py::object mFGN;
+    nn::RefNN *mFGN = nullptr;
+    bool mFGNLoaded = false;
     std::string mFGNmetadata;
     Eigen::Vector3d mFGNRootOffset;
     int selected_fgn;
@@ -164,7 +163,7 @@ private:
 
 
     // For GVAE
-    py::object mGVAE;
+    nn::GaitVAE *mGVAE = nullptr;
     bool mGVAELoaded;
     std::vector<BoneInfo> mSkelInfosForMotions;
     std::vector<Motion> mMotions;

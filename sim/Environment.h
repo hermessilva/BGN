@@ -3,6 +3,7 @@
 #include "dart/dart.hpp"
 #include "BVH_Parser.h"
 #include "Character.h"
+#include "NN.h"
 #include "dart/collision/bullet/bullet.hpp"
 
 // Struct Motion (include motion (eigen vectorxd) and param (eigen vectorxd)
@@ -25,8 +26,8 @@ struct param_group
 struct Network
 {
     std::string name; // Actually Path
-    py::object joint;
-    py::object muscle;
+    nn::PolicyNN *joint = nullptr;
+    nn::MuscleNN *muscle = nullptr;
 
     // Only for cascading learning
     Eigen::VectorXd minV;
@@ -106,7 +107,7 @@ public:
     // Metabolic Reward
     void setIncludeMetabolicReward(bool _includeMetabolicReward) { mIncludeMetabolicReward = _includeMetabolicReward; }
     bool getIncludeMetabolicReward() { return mIncludeMetabolicReward; }
-    void setMuscleNetwork(py::object nn)
+    void setMuscleNetwork(nn::MuscleNN *muscleNet)
     {
         if (!mLoadedMuscleNN)
         {
@@ -120,23 +121,7 @@ public:
             mChildNetworks.push_back(child_elem);
         }
 
-        mMuscleNN = nn;
-        mLoadedMuscleNN = true;
-    }
-    void setMuscleNetworkWeight(py::object w)
-    {
-        if (!mLoadedMuscleNN)
-        {
-            std::vector<int> child_elem;
-
-            for (int i = 0; i < mPrevNetworks.size(); i++)
-            {
-                mEdges.push_back(Eigen::Vector2i(i, mPrevNetworks.size()));
-                child_elem.push_back(i);
-            }
-            mChildNetworks.push_back(child_elem);
-        }
-        mMuscleNN.attr("load_state_dict")(w);
+        mMuscleNN = muscleNet;
         mLoadedMuscleNN = true;
     }
 
@@ -311,7 +296,7 @@ private :
     double mRandomWeight;
 
     // Network
-    py::object mMuscleNN;
+    nn::MuscleNN *mMuscleNN = nullptr;
 
     // Reward Type (Deep Mimic or GaitNet)
     RewardType mRewardType;
@@ -389,8 +374,6 @@ private :
 
     Eigen::VectorXd mState;
     Eigen::VectorXd mJointState;
-
-    py::object loading_network;
 
     std::vector<bool> mUseWeights; // Onle For Rendering
     int mHorizon;

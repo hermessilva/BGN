@@ -7,7 +7,54 @@ authors (Jungnam Park, Moon Seok Park, Jehee Lee, Jungdam Won).
 
 The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
-## [Unreleased] — Native Windows port (MSVC + vcpkg)
+## [Unreleased] — Python-free inference (pure C++/Eigen)
+
+Removed the runtime dependency on Python/PyTorch entirely. The simulation and the
+viewer now evaluate every neural network in C++ (Eigen); the app runs with no
+Python interpreter, no `pybind11`, and no `torch` on the machine. The project
+targets real-time inference with the shipped pre-trained networks, so the offline
+training code (which is what needed Python) was dropped.
+
+### Added
+- `sim/NN.{h,cpp}` — pure-Eigen inference for all networks: `MuscleNN`
+  (two-level muscle control), `PolicyNN` (SimulationNN actor + `weight_filter`),
+  `RefNN` (Forward GaitNet) and `GaitVAE` (Backward GaitNet), plus a minimal
+  `safetensors` reader (JSON header via nlohmann_json + f32 blobs).
+- `tools/export_weights.py` — one-time migration tool. Converts the shipped
+  pickled ray/torch checkpoints (`fgn/…`, `bgn/…`, `data/trained_nn/…`) into
+  `.safetensors` the C++ loads at runtime. The ray "worker" blob is read without
+  ray installed via a permissive stub Unpickler. The converted `.safetensors`
+  are committed alongside the originals.
+- Committed `*.safetensors` for fgn, bgn and the four cascading policies.
+
+### Changed
+- `sim/Environment.{h,cpp}`, `sim/Character.h`: dropped the embedded Python
+  interpreter; `Network::joint/muscle` and `mMuscleNN` are now `nn::*` objects;
+  muscle forward, cascading `get_action`/`weight_filter` and metadata loading call
+  the C++ NN. `setMuscleNetwork` takes an `nn::MuscleNN*`.
+- `viewer/`: `get_action`, `loading_network`/`loading_metadata`, Forward/Backward
+  GaitNet load + `render_forward` all go through `sim/NN`. `viewer/main.cpp` no
+  longer starts a `scoped_interpreter`.
+- Build: `sim` links `nlohmann_json` instead of `pybind11::embed`; `viewer` no
+  longer links pybind11; the `python/` pysim module was removed from the build.
+
+### Verified
+- C++/Eigen forward passes match the original torch modules to float precision
+  (max abs diff ≈ 1e-6 for MuscleNN, PolicyNN and RefNN).
+- Viewer runs and renders with `python310.dll` deleted and no `PYTHONPATH`.
+
+### Removed
+- The entire `python/` package (pysim binding `RayEnvManager.cpp`, PPO/GaitNet
+  training scripts, ray glue, SLURM launchers). Model creation now requires
+  re-introducing a training path; running the shipped models does not.
+
+### Not yet ported
+- **C3D import** (`viewer/C3D_Reader.cpp`) used the Python `c3dTobvh` loader and is
+  disabled (`#if 0`); a C++ C3D reader is needed to re-enable it.
+- Loading pre-rendered `.npz` motion sets in the viewer (a training-data UI) was
+  removed; motions can still be captured live via "Add Current Simulation motion".
+
+## [Earlier] — Native Windows port (MSVC + vcpkg)
 
 Ported the project from its Linux-only toolchain (GCC, EGL, ray/rllib 1.8, Python 3.6)
 to build and run natively on Windows with Visual Studio 2026 (MSVC 14.51), CMake and

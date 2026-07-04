@@ -33,7 +33,6 @@ if(SERVER_BUILD)
 endif()
 
 add_subdirectory( sim )
-add_subdirectory( python )
 if(GAITNET_BUILD_VIEWER)
   add_subdirectory( libs )
   add_subdirectory( viewer )

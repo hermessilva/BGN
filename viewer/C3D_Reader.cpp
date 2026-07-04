@@ -72,7 +72,12 @@ C3D_Reader::~C3D_Reader()
 
 std::vector<Eigen::VectorXd> C3D_Reader::loadC3D(std::string path, double torsionL, double torsionR, double scale, double height)
 {
-    py::tuple c3d = py::module::import("c3dTobvh").attr("load_c3d")(path);
+    // C3D import used the Python `c3dTobvh` loader. It is disabled in the
+    // Python-free build; port a C++ C3D reader to re-enable it.
+    std::cerr << "[C3D] loading disabled in the Python-free build (" << path << ")" << std::endl;
+    return {};
+#if 0
+    py::tuple c3d;
 
     mFrameRate = c3d[2].cast<int>();
 
@@ -175,6 +180,7 @@ std::vector<Eigen::VectorXd> C3D_Reader::loadC3D(std::string path, double torsio
 
 
     return new_motion;
+#endif
 }
 
 // std::vector<Eigen::VectorXd>

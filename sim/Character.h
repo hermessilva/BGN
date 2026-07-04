@@ -5,13 +5,6 @@
 #include "Muscle.h"
 #include "SimpleMotion.h"
 
-#include <pybind11/pybind11.h>
-#include <pybind11/numpy.h>
-#include <pybind11/embed.h>
-#include <pybind11/eigen.h>
-
-namespace py = pybind11;
-
 struct ModifyInfo
 {
     ModifyInfo() : ModifyInfo(1.0, 1.0, 1.0, 1.0, 0.0) {}

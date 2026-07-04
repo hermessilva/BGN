@@ -19,6 +19,7 @@ x64/
 sim/Release/
 python/Release/
 viewer_windows_smoke.png
+viewer_nopython.png
 
 legacy_data/
 

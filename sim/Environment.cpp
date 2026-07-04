@@ -268,11 +268,9 @@ void Environment::
     if (doc.FirstChildElement("enforceSymmetry") != NULL)
         mEnforceSymmetry = doc.FirstChildElement("enforceSymmetry")->BoolText();
 
-    if (isTwoLevelController())
-    {
-        Character *character = mCharacters[0];
-        mMuscleNN = py::module::import("ray_model").attr("generating_muscle_nn")(character->getNumMuscleRelatedDof(), getNumActuatorAction(), character->getNumMuscles(), true, mUseCascading);
-    }
+    // The "current" muscle network starts empty; its real weights are supplied
+    // later via setMuscleNetwork() (e.g. when the viewer loads a checkpoint).
+    // It is only evaluated once mLoadedMuscleNN is true.
 
     if (doc.FirstChildElement("Horizon") != NULL)
         mHorizon = doc.FirstChildElement("Horizon")->IntText();
@@ -386,7 +384,6 @@ void Environment::
         mChildNetworks.clear();
         if (mUseCascading)
         {
-            loading_network = py::module::import("ray_model").attr("loading_network");
             auto networks = doc.FirstChildElement("cascading")->FirstChildElement();
             auto edges = doc.FirstChildElement("cascading")->LastChildElement();
             int idx = 0;
@@ -494,7 +491,7 @@ void Environment::
 
         for (int i = 0; i < mPrevNetworks.size(); i++)
         {
-            Eigen::VectorXd prev_action = mPrevNetworks[i].joint.attr("get_action")(mProjStates[i]).cast<Eigen::VectorXd>();
+            Eigen::VectorXd prev_action = mPrevNetworks[i].joint->getAction(mProjStates[i]);
             if (i == 0)
             {
                 mAction.head(mNumActuatorAction) = mActionScale * (mUseWeights[i * (mUseMuscle ? 2 : 1)] ? 1 : 0) * prev_action.head(mNumActuatorAction);
@@ -504,7 +501,7 @@ void Environment::
             }
             double beta = 0.2 + 0.1 * prev_action[prev_action.rows() - 1];
             mBetas[i] = beta;
-            mWeights[i] = mPrevNetworks.front().joint.attr("weight_filter")(mDmins[i], beta).cast<double>();
+            mWeights[i] = nn::PolicyNN::weightFilter(mDmins[i], beta);
 
             // Joint Anlge 부분은 add position 을 통해서
             mAction.head(mNumActuatorAction) = mCharacters[0]->addPositions(mAction.head(mNumActuatorAction), (mUseWeights[i * (mUseMuscle ? 2 : 1)] ? 1 : 0) * mWeights[i] * mActionScale * prev_action.head(mNumActuatorAction), false); // mAction.head(mNumActuatorAction)
@@ -516,7 +513,7 @@ void Environment::
         {
             double beta = 0.2 + 0.1 * _action[_action.rows() - 1];
             mBetas[mBetas.size() - 1] = beta;
-            mWeights[mWeights.size() - 1] = mPrevNetworks.front().joint.attr("weight_filter")(mDmins.back(), beta).cast<double>();
+            mWeights[mWeights.size() - 1] = nn::PolicyNN::weightFilter(mDmins.back(), beta);
             // mAction.head(mAction.rows() - 1) += (mUseWeights[mWeights.size() - 1] ? 1 : 0) * mWeights[mWeights.size() - 1] * _action.head(mAction.rows() - 1);
             mAction.head(mNumActuatorAction) = mCharacters[0]->addPositions(mAction.head(mNumActuatorAction), (mUseWeights[mUseWeights.size() - (mUseMuscle ? 2 : 1)] ? 1 : 0) * mWeights.back() * mActionScale * _action.head(mNumActuatorAction), false); // mAction.head(mNumActuatorAction)
             mAction.segment(mNumActuatorAction, (mAction.rows() - 1) - mNumActuatorAction) += (mUseWeights[mUseWeights.size() - (mUseMuscle ? 2 : 1)] ? 1 : 0) * mWeights.back() * _action.segment(mNumActuatorAction, (mAction.rows() - 1) - mNumActuatorAction);
@@ -924,7 +921,7 @@ void Environment::
 
             // For base network
             if (mPrevNetworks.size() > 0)
-                prev_activations[0] = mPrevNetworks[0].muscle.attr("unnormalized_no_grad_forward")(mt.JtA_reduced, dt, py::cast<py::none>(Py_None), true, py::cast<py::none>(Py_None)).cast<Eigen::VectorXf>();
+                prev_activations[0] = mPrevNetworks[0].muscle->unnormalizedForward(mt.JtA_reduced, dt, nullptr, nullptr);
 
             for (int j = 1; j < mPrevNetworks.size(); j++)
             {
@@ -932,7 +929,8 @@ void Environment::
                 Eigen::VectorXf prev_activation = Eigen::VectorXf::Zero(mCharacters[0]->getMuscles().size());
                 for (int k : mChildNetworks[j])
                     prev_activation += prev_activations[k];
-                prev_activations[j] = (mUseWeights[j * 2 + 1] ? 1 : 0) * mWeights[j] * mPrevNetworks[j].muscle.attr("unnormalized_no_grad_forward")(mt.JtA_reduced, dt, prev_activation, true, mWeights[j]).cast<Eigen::VectorXf>();
+                float wj = (float)mWeights[j];
+                prev_activations[j] = (float)((mUseWeights[j * 2 + 1] ? 1 : 0) * mWeights[j]) * mPrevNetworks[j].muscle->unnormalizedForward(mt.JtA_reduced, dt, &prev_activation, &wj);
             }
             // Current Network
             if (mLoadedMuscleNN)
@@ -942,16 +940,19 @@ void Environment::
                     prev_activation += prev_activations[k];
 
                 if (mPrevNetworks.size() > 0)
-                    prev_activations[prev_activations.size() - 1] = (mUseWeights.back() ? 1 : 0) * mWeights.back() * mMuscleNN.attr("unnormalized_no_grad_forward")(mt.JtA_reduced, dt, prev_activation, true, mWeights.back()).cast<Eigen::VectorXf>();
+                {
+                    float wb = (float)mWeights.back();
+                    prev_activations[prev_activations.size() - 1] = (float)((mUseWeights.back() ? 1 : 0) * mWeights.back()) * mMuscleNN->unnormalizedForward(mt.JtA_reduced, dt, &prev_activation, &wb);
+                }
                 else
-                    prev_activations[prev_activations.size() - 1] = mMuscleNN.attr("unnormalized_no_grad_forward")(mt.JtA_reduced, dt, py::cast<py::none>(Py_None), true, py::cast<py::none>(Py_None)).cast<Eigen::VectorXf>();
+                    prev_activations[prev_activations.size() - 1] = mMuscleNN->unnormalizedForward(mt.JtA_reduced, dt, nullptr, nullptr);
             }
 
             Eigen::VectorXf activations = Eigen::VectorXf::Zero(mCharacters[0]->getMuscles().size());
             for (Eigen::VectorXf a : prev_activations)
                 activations += a;
 
-            activations = mMuscleNN.attr("forward_filter")(activations).cast<Eigen::VectorXf>();
+            activations = nn::MuscleNN::forwardFilter(activations);
 
             if (isMirror())
                 activations = mCharacters[0]->getMirrorActivation(activations.cast<double>()).cast<float>();
@@ -1702,22 +1703,18 @@ Eigen::Vector2i Environment::getIsContact()
 Network Environment::
     loadPrevNetworks(std::string path, bool isFirst)
 {
-    Network nn;
-    // path, state size, action size, acuator type
-    std::string metadata = py::module::import("ray_model").attr("loading_metadata")(path).cast<std::string>();
+    Network net;
+    // Load the policy actor + muscle network straight from the exported weights.
+    net.joint = new nn::PolicyNN();
+    net.muscle = new nn::MuscleNN();
+    std::string metadata = nn::loadPolicyCheckpoint(path, net.joint, net.muscle);
     std::pair<Eigen::VectorXd, Eigen::VectorXd> space = getSpace(metadata);
 
-    Eigen::VectorXd projState = getProjState(space.first, space.second).first;
+    net.minV = space.first;
+    net.maxV = space.second;
+    net.name = path;
 
-    py::tuple res = loading_network(path, projState.rows(), mAction.rows() - (isFirst ? 1 : 0), true, mNumActuatorAction, mCharacters[0]->getNumMuscles(), mCharacters[0]->getNumMuscleRelatedDof());
-
-    nn.joint = res[0];
-    nn.muscle = res[1];
-    nn.minV = space.first;
-    nn.maxV = space.second;
-    nn.name = path;
-
-    return nn;
+    return net;
 }
 
 std::pair<Eigen::VectorXd, Eigen::VectorXd>

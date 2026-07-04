@@ -153,9 +153,6 @@ GLFWApp::GLFWApp(int argc, char **argv, bool rendermode)
     ImGui_ImplOpenGL3_Init("#version 150");
     ImPlot::CreateContext();
 
-    mns = py::module::import("__main__").attr("__dict__");
-    py::module::import("sys").attr("path").attr("insert")(1, "../python");
-
     if (argc > 1) // Network 가 주어졌을 때
     {
         std::string path = std::string(argv[1]);
@@ -284,7 +281,7 @@ void GLFWApp::update(bool _isSave)
         mEnv->getReward();
         mRewardBuffer.push_back(mEnv->getRewardMap());
 
-        Eigen::VectorXf action = (mNetworks.size() > 0 ? mNetworks[0].joint.attr("get_action")(mEnv->getState(), mStochasticPolicy).cast<Eigen::VectorXf>() : mEnv->getAction().cast<float>());
+        Eigen::VectorXf action = (mNetworks.size() > 0 ? mNetworks[0].joint->getAction(mEnv->getState()).cast<float>() : mEnv->getAction().cast<float>());
 
         mEnv->setAction(action.cast<double>());
     }
@@ -402,8 +399,6 @@ void GLFWApp::initGL()
 
 void GLFWApp::setEnv(Environment *env, std::string metadata)
 {
-    loading_network = py::module::import("ray_model").attr("loading_network");
-
     if (mNetworkPaths.size() > 0)
     {
         std::string path = mNetworkPaths.back();
@@ -414,9 +409,9 @@ void GLFWApp::setEnv(Environment *env, std::string metadata)
         }
         else
         {
-            py::object py_metadata = py::module::import("ray_model").attr("loading_metadata")(mNetworkPaths.back());
-            if (py_metadata.cast<py::none>() != Py_None)
-                metadata = py_metadata.cast<std::string>();
+            std::string md = nn::loadMetadata(mNetworkPaths.back());
+            if (!md.empty())
+                metadata = md;
         }
     }
 
@@ -432,9 +427,9 @@ void GLFWApp::setEnv(Environment *env, std::string metadata)
     {
         Network new_elem;
         new_elem.name = p;
-        py::tuple res = loading_network(p.c_str(), mEnv->getState().rows(), mEnv->getAction().rows(), (character->getActuactorType() == mass), mEnv->getNumActuatorAction(), character->getNumMuscles(), character->getNumMuscleRelatedDof());
-        new_elem.joint = res[0];
-        new_elem.muscle = res[1];
+        new_elem.joint = new nn::PolicyNN();
+        new_elem.muscle = new nn::MuscleNN();
+        nn::loadPolicyCheckpoint(p, new_elem.joint, new_elem.muscle);
         mNetworks.push_back(new_elem);
     }
 
@@ -502,31 +497,9 @@ void GLFWApp::setEnv(Environment *env, std::string metadata)
     mMotions.clear();
     std::string motion_path = "../motions";
     mMotionIdx = 0;
-    if (fs::exists(motion_path))
-    {
-    py::object load_motions_from_file = py::module::import("forward_gaitnet").attr("load_motions_from_file");
-    for (const auto &entry : fs::directory_iterator(motion_path))
-    {
-        std::string file_name = entry.path().string();
-        if (file_name.find(".npz") == std::string::npos)
-            continue;
-
-        py::tuple results = load_motions_from_file(file_name, mEnv->getNumKnownParam());
-        int idx = 0;
-
-        Eigen::MatrixXd params = results[0].cast<Eigen::MatrixXd>();
-        Eigen::MatrixXd motions = results[1].cast<Eigen::MatrixXd>();
-
-        for (int i = 0; i < params.rows(); i++)
-        {
-            Motion motion_elem;
-            motion_elem.name = file_name + "_" + std::to_string(i);
-            motion_elem.param = params.row(i);
-            motion_elem.motion = motions.row(i);
-            mMotions.push_back(motion_elem);
-        }
-    }
-    }
+    // NOTE: loading pre-rendered .npz motion sets (used only for the training/
+    // data-collection UI) required the Python stack and was removed in the
+    // Python-free port. The motion list stays empty here.
 }
 
 void GLFWApp::drawAxis()
@@ -592,9 +565,9 @@ void GLFWApp::drawGaitNetDisplay()
     if (ImGui::Button("Load FGN"))
     {
         mDrawFGNSkeleton = true;
-        py::tuple res = py::module::import("forward_gaitnet").attr("load_FGN")(mFGNList[selected_fgn], mEnv->getNumParamState(), mEnv->getCharacter(0)->posToSixDof(mEnv->getCharacter(0)->getSkeleton()->getPositions()).rows());
-        mFGN = res[0];
-        mFGNmetadata = res[1].cast<std::string>();
+        mFGN = new nn::RefNN();
+        mFGNmetadata = nn::loadRefCheckpoint(mFGNList[selected_fgn], mFGN);
+        mFGNLoaded = true;
 
         mNetworkPaths.clear();
         mNetworks.clear();
@@ -617,13 +590,15 @@ void GLFWApp::drawGaitNetDisplay()
     if (ImGui::Button("Load BGN"))
     {
         mGVAELoaded = true;
-        py::object load_gaitvae = py::module::import("advanced_vae").attr("load_gaitvae");
-        int rows = mEnv->getCharacter(0)->posToSixDof(mEnv->getCharacter(0)->getSkeleton()->getPositions()).rows();
-        mGVAE = load_gaitvae(mBGNList[selected_fgn], rows, 60, mEnv->getNumKnownParam(), mEnv->getNumParamState());
+        mGVAE = new nn::GaitVAE();
+        nn::loadVAECheckpoint(mBGNList[selected_bgn], mGVAE, mEnv->getNumKnownParam(), 60);
 
-        mPredictedMotion.motion = mMotions[mMotionIdx].motion;
-        mPredictedMotion.param = mMotions[mMotionIdx].param;
-        mPredictedMotion.name = "Unpredicted";
+        if (!mMotions.empty())
+        {
+            mPredictedMotion.motion = mMotions[mMotionIdx].motion;
+            mPredictedMotion.param = mMotions[mMotionIdx].param;
+            mPredictedMotion.name = "Unpredicted";
+        }
     }
     if (ImGui::CollapsingHeader("C3D"))
     {
@@ -683,7 +658,7 @@ void GLFWApp::drawGaitNetDisplay()
         }
     }
     ImGui::SliderInt("Motion Phase Offset", &mMotionPhaseOffset, 0, 59);
-    if (ImGui::Button("Convert Motion"))
+    if (!mMotions.empty() && ImGui::Button("Convert Motion"))
     {
         int size = 101;
         Eigen::VectorXd m = mMotions[mMotionIdx].motion;
@@ -757,28 +732,20 @@ void GLFWApp::drawGaitNetDisplay()
         mAddedMotions.push_back(current_motion);
     }
 
-    if (ImGui::Button("Set to Param of reference"))
+    if (!mMotions.empty() && ImGui::Button("Set to Param of reference"))
         mEnv->setParamState(mMotions[mMotionIdx].param, false, true);
 
-    if (mGVAELoaded)
+    if (mGVAELoaded && !mMotions.empty())
     {
         if (ImGui::Button("predict new motion"))
         {
             Eigen::VectorXd input = Eigen::VectorXd::Zero(mMotions[mMotionIdx].motion.rows() + mEnv->getNumKnownParam());
             input << mMotions[mMotionIdx].motion, mEnv->getNormalizedParamStateFromParam(mMotions[mMotionIdx].param.head(mEnv->getNumKnownParam()));
-            py::tuple res = mGVAE.attr("render_forward")(input.cast<float>());
-            Eigen::VectorXd motion = res[0].cast<Eigen::VectorXd>();
-            Eigen::VectorXd param = res[1].cast<Eigen::VectorXd>();
+            Eigen::VectorXd motion, param;
+            mGVAE->renderForward(input.cast<float>(), motion, param);
 
             mPredictedMotion.motion = motion;
             mPredictedMotion.param = mEnv->getParamStateFromNormalized(param);
-        }
-
-        if (ImGui::Button("Sampling 1000 params"))
-        {
-            Eigen::VectorXd input = Eigen::VectorXd::Zero(mMotions[mMotionIdx].motion.rows() + mEnv->getNumKnownParam());
-            input << mMotions[mMotionIdx].motion, mEnv->getNormalizedParamStateFromParam(mMotions[mMotionIdx].param.head(mEnv->getNumKnownParam()));
-            mGVAE.attr("sampling")(input.cast<float>(), mMotions[mMotionIdx].param);
         }
 
         if (ImGui::Button("Set to predicted param"))
@@ -788,41 +755,13 @@ void GLFWApp::drawGaitNetDisplay()
         {
             Eigen::VectorXd input = Eigen::VectorXd::Zero(mMotions[mMotionIdx].motion.rows() + mEnv->getNumKnownParam());
             input << mMotions[mMotionIdx].motion, mEnv->getNormalizedParamStateFromParam(mMotions[mMotionIdx].param.head(mEnv->getNumKnownParam()));
-            py::tuple res = mGVAE.attr("render_forward")(input.cast<float>());
-            Eigen::VectorXd motion = res[0].cast<Eigen::VectorXd>();
-            Eigen::VectorXd param = res[1].cast<Eigen::VectorXd>();
+            Eigen::VectorXd motion, param;
+            mGVAE->renderForward(input.cast<float>(), motion, param);
 
             mPredictedMotion.motion = motion;
             mPredictedMotion.param = mEnv->getParamStateFromNormalized(param);
             mEnv->setParamState(mPredictedMotion.param, false, true);
         }
-    }
-    if (ImGui::Button("Save added motion"))
-    {
-        py::list motions;
-        py::list params;
-
-        for (auto m : mAddedMotions)
-        {
-            motions.append(m.motion);
-            params.append(m.param);
-        }
-
-        py::object save_motions = py::module::import("converter_to_gvae_set").attr("save_motions");
-        save_motions(motions, params);
-    }
-
-    if (ImGui::Button("Save Selected Motion"))
-    {
-        py::list motions;
-        py::list params;
-        Motion motion = mMotions[mMotionIdx];
-
-        motions.append(motion.motion);
-        params.append(motion.param);
-
-        py::object save_motions = py::module::import("converter_to_gvae_set").attr("save_motions");
-        save_motions(motions, params);
     }
 
     ImGui::End();
@@ -1639,7 +1578,7 @@ void GLFWApp::drawSimFrame()
 
         FGN_in << mEnv->getNormalizedParamState(mEnv->getParamMin(), mEnv->getParamMax()), phase;
 
-        Eigen::VectorXd res = mFGN.attr("get_action")(FGN_in).cast<Eigen::VectorXd>();
+        Eigen::VectorXd res = mFGN->forward(FGN_in);
         if (mSimulation)
         {
             // Because of display Hz

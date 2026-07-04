@@ -13,9 +13,6 @@ find_package(glfw3 CONFIG REQUIRED)
 find_package(FreeGLUT CONFIG REQUIRED)     # only for glutBitmapCharacter text
 find_package(assimp CONFIG REQUIRED)
 
-set(PYBIND11_FINDPYTHON ON)
-find_package(pybind11 CONFIG REQUIRED)
-
 file(GLOB srcs "*.h" "*.cpp")
 
 add_executable(viewer ${srcs})
@@ -32,7 +29,6 @@ target_link_libraries(viewer
     assimp::assimp
     OpenGL::GL
     OpenGL::GLU
-    FreeGLUT::freeglut
-    pybind11::embed)
+    FreeGLUT::freeglut)
 
 set_target_properties(viewer PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/viewer)

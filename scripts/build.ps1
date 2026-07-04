@@ -18,7 +18,6 @@ $build  = "$root\build"
 # Reuse the vcpkg installation provisioned for the sibling MASS project
 # (dartsim, tinyxml2, pybind11, glfw3, glad, imgui, imguizmo, boost-asio, ...).
 $vcpkg  = "D:\Tootega\Source\MASS\Deps\vcpkg"
-$pyBase = "C:\Users\Hermes\AppData\Local\Programs\Python\Python310"
 
 if (-not (Test-Path "$vcpkg\scripts\buildsystems\vcpkg.cmake")) {
     throw "vcpkg toolchain not found at $vcpkg. Adjust `$vcpkg in this script."
@@ -33,10 +32,7 @@ if (-not (Test-Path "$build\CMakeCache.txt")) {
     cmake -S $root -B $build -G "Visual Studio 18 2026" -A x64 `
         -DCMAKE_TOOLCHAIN_FILE="$vcpkg\scripts\buildsystems\vcpkg.cmake" `
         -DVCPKG_TARGET_TRIPLET=x64-windows `
-        -DGAITNET_BUILD_VIEWER=$viewer `
-        -DPython_EXECUTABLE="$pyBase\python.exe" `
-        -DPython_INCLUDE_DIR="$pyBase\include" `
-        -DPython_LIBRARY="$pyBase\libs\python310.lib"
+        -DGAITNET_BUILD_VIEWER=$viewer
     if ($LASTEXITCODE -ne 0) { throw "configure failed" }
 }
 
