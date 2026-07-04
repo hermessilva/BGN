@@ -1089,8 +1089,10 @@ void App::fitSkeletonToSkin() {
     };
     // scale every node in `nodes` about pivot by factor k (uniform); shrink body boxes too
     auto scaleAbout = [&](const std::vector<int>& nodes, const Vec3& piv, double k) {
+        std::vector<std::string> ids;
         for (int i : nodes) {
             Node& n = mModel.skeleton[i];
+            ids.push_back(n.id);
             for (Transform* t : { &n.body.t, &n.joint.t }) {
                 t->translation[0] = piv[0] + (t->translation[0] - piv[0]) * k;
                 t->translation[1] = piv[1] + (t->translation[1] - piv[1]) * k;
@@ -1098,6 +1100,12 @@ void App::fitSkeletonToSkin() {
             }
             for (int a = 0; a < 3; a++) n.body.size[a] *= k;
         }
+        // re-anchor muscle waypoints attached to the scaled bones (else sim NaNs)
+        auto inSub = [&](const std::string& b){ for (auto& s : ids) if (s == b) return true; return false; };
+        for (auto& mu : mModel.muscles)
+            for (auto& w : mu.waypoints)
+                if (inSub(w.body))
+                    for (int a = 0; a < 3; a++) w.p[a] = piv[a] + (w.p[a] - piv[a]) * k;
     };
     auto meshReachAxis = [&](const Vec3& piv, int axis, double sgn, double band) {
         double best = 0;
@@ -1113,37 +1121,28 @@ void App::fitSkeletonToSkin() {
     };
 
     int fitted = 0;
-    // arms: scale ShoulderX subtree about the shoulder joint so the hand reaches the mesh span (X axis)
-    for (const char* side : { "R", "L" }) {
-        int sh = idOf(std::string("Shoulder") + side);
-        int hand = idOf(std::string("Hand") + side);
-        if (sh < 0 || hand < 0) continue;
-        Vec3 piv = mModel.skeleton[sh].joint.t.translation;
-        double handX = mModel.skeleton[hand].body.t.translation[0];
-        double sgn = (handX - piv[0]) >= 0 ? 1.0 : -1.0;
-        double reach = std::fabs(handX - piv[0]);
-        double meshReach = meshReachAxis(piv, 0, sgn, 0.28);
-        if (reach > 1e-3 && meshReach > 1e-3) {
-            double k = std::clamp(meshReach / reach, 0.3, 1.3);
-            scaleAbout(subtree(std::string("Shoulder") + side), piv, k);
-            fitted++;
+    // The sim asserts L/R muscle symmetry, so both sides of a limb pair must get
+    // the SAME scale — average the per-side reach ratios and apply the mean to both.
+    auto fitPair = [&](const std::string& chain, const std::string& tip,
+                       int axis, double dir, double band, double lo, double hi) {
+        double kSum = 0; int kN = 0;
+        std::vector<std::pair<std::string, Vec3>> sides;
+        for (const char* side : { "R", "L" }) {
+            int root = idOf(chain + side), end = idOf(tip + side);
+            if (root < 0 || end < 0) continue;
+            Vec3 piv = mModel.skeleton[root].joint.t.translation;
+            double reach = std::fabs(mModel.skeleton[end].body.t.translation[axis] - piv[axis]);
+            double sgn = (axis == 0) ? ((mModel.skeleton[end].body.t.translation[0]-piv[0])>=0 ? 1.0 : -1.0) : dir;
+            double mr = meshReachAxis(piv, axis, sgn, band);
+            sides.push_back({ chain + side, piv });
+            if (reach > 1e-3 && mr > 1e-3) { kSum += mr/reach; kN++; }
         }
-    }
-    // legs: scale FemurX subtree about the hip joint so the foot reaches the mesh bottom (Y axis)
-    for (const char* side : { "R", "L" }) {
-        int fem = idOf(std::string("Femur") + side);
-        int foot = idOf(std::string("Talus") + side);
-        if (fem < 0 || foot < 0) continue;
-        Vec3 piv = mModel.skeleton[fem].joint.t.translation;
-        double footY = mModel.skeleton[foot].body.t.translation[1];
-        double reach = std::fabs(footY - piv[1]);       // hip -> ankle
-        double meshReach = meshReachAxis(piv, 1, -1.0, 0.20); // downward
-        if (reach > 1e-3 && meshReach > 1e-3) {
-            double k = std::clamp(meshReach / reach, 0.5, 1.4);
-            scaleAbout(subtree(std::string("Femur") + side), piv, k);
-            fitted++;
-        }
-    }
+        if (kN == 0) return;
+        double k = std::clamp(kSum / kN, lo, hi);
+        for (auto& s : sides) { scaleAbout(subtree(s.first), s.second, k); fitted++; }
+    };
+    fitPair("Shoulder", "Hand", 0, 1.0, 0.28, 0.3, 1.3);   // arms (X span)
+    fitPair("Femur",    "Talus", 1, -1.0, 0.20, 0.5, 1.4); // legs (Y drop)
 
     syncMeshes();            // reload bone OBJ meshes at the new transforms
     applySkinPlacement();    // rebind skin to the adapted skeleton

@@ -72,11 +72,15 @@ static V3 rotEuler(const V3& v, const Vec3& deg) {
     return V3{ cz*b[0]-sz*b[1], sz*b[0]+cz*b[1], b[2] };
 }
 
-// morph one limb chain: scale the subtree rooted at `root` about `pivot` by k
+// morph one limb chain: scale the subtree rooted at `root` about `pivot` by k.
+// Also re-anchors the muscle waypoints attached to those bodies, otherwise the
+// muscles crossing the scaled bones keep their old geometry and the sim NaNs.
 static void scaleSubtree(Model& m, const std::string& root, const V3& pivot, double k) {
+    std::vector<std::string> subtree;
     std::vector<std::string> frontier{ root };
     while (!frontier.empty()) {
         std::string cur = frontier.back(); frontier.pop_back();
+        subtree.push_back(cur);
         Node* n = m.findNode(cur);
         if (n) {
             for (Transform* t : { &n->body.t, &n->joint.t })
@@ -85,6 +89,11 @@ static void scaleSubtree(Model& m, const std::string& root, const V3& pivot, dou
         }
         for (auto& c : m.skeleton) if (c.parent == cur) frontier.push_back(c.id);
     }
+    auto inSub = [&](const std::string& b){ for (auto& s : subtree) if (s == b) return true; return false; };
+    for (auto& mu : m.muscles)
+        for (auto& w : mu.waypoints)
+            if (inSub(w.body))
+                for (int a=0;a<3;a++) w.p[a] = pivot[a] + (w.p[a]-pivot[a])*k;
 }
 // mesh reach from pivot along axis (0=X,1=Y) on side `sgn`, within a perpendicular
 // band. Returns a high percentile (not the max) of the reach distribution so thin
@@ -137,30 +146,33 @@ json BindSkin::bind(Model& m, const std::string& obj, const Vec3& rotDeg,
     }
 
     // adapt the skeleton limb chains to the placed mesh (arms/legs) so the bones
-    // match the character; binding below then uses the fitted skeleton
+    // match the character. IMPORTANT: the sim asserts L/R muscle symmetry, so both
+    // sides of a limb pair must get the SAME scale — average the two sides.
     int fitted = 0;
     if (fitBones) {
-        for (const char* side : { "R", "L" }) {
-            Node* sh = m.findNode(std::string("Shoulder") + side);
-            Node* hand = m.findNode(std::string("Hand") + side);
-            if (sh && hand) {
-                V3 piv{ sh->joint.t.translation[0], sh->joint.t.translation[1], sh->joint.t.translation[2] };
-                double handX = hand->body.t.translation[0];
-                double sgn = (handX - piv[0]) >= 0 ? 1.0 : -1.0;
-                double reach = std::fabs(handX - piv[0]);
-                double mr = meshReach(pos, piv, 0, sgn, 0.28);
-                if (reach > 1e-3 && mr > 1e-3) { double k = std::clamp(mr/reach, 0.3, 1.3); scaleSubtree(m, std::string("Shoulder")+side, piv, k); fitted++; }
+        // per-limb-pair: gather reach ratio for R and L, apply the mean to both
+        auto fitPair = [&](const std::string& chain, const std::string& tip,
+                           int axis, double dir, double band, double lo, double hi) {
+            double kSum = 0; int kN = 0;
+            struct P2 { std::string root; V3 piv; };
+            std::vector<P2> sides;
+            for (const char* side : { "R", "L" }) {
+                Node* root = m.findNode(chain + side);
+                Node* end  = m.findNode(tip + side);
+                if (!root || !end) continue;
+                V3 piv{ root->joint.t.translation[0], root->joint.t.translation[1], root->joint.t.translation[2] };
+                double reach = std::fabs(end->body.t.translation[axis] - piv[axis]);
+                double sgn = (axis == 0) ? ((end->body.t.translation[0]-piv[0])>=0 ? 1.0 : -1.0) : dir;
+                double mr = meshReach(pos, piv, axis, sgn, band);
+                sides.push_back({ chain + side, piv });
+                if (reach > 1e-3 && mr > 1e-3) { kSum += mr/reach; kN++; }
             }
-            Node* fem = m.findNode(std::string("Femur") + side);
-            Node* foot = m.findNode(std::string("Talus") + side);
-            if (fem && foot) {
-                V3 piv{ fem->joint.t.translation[0], fem->joint.t.translation[1], fem->joint.t.translation[2] };
-                double footY = foot->body.t.translation[1];
-                double reach = std::fabs(footY - piv[1]);
-                double mr = meshReach(pos, piv, 1, -1.0, 0.20);
-                if (reach > 1e-3 && mr > 1e-3) { double k = std::clamp(mr/reach, 0.5, 1.4); scaleSubtree(m, std::string("Femur")+side, piv, k); fitted++; }
-            }
-        }
+            if (kN == 0) return;
+            double k = std::clamp(kSum / kN, lo, hi);   // shared, symmetric scale
+            for (auto& s : sides) { scaleSubtree(m, s.root, s.piv, k); fitted++; }
+        };
+        fitPair("Shoulder", "Hand", 0, 1.0, 0.28, 0.3, 1.3);   // arms (X span)
+        fitPair("Femur",    "Talus", 1, -1.0, 0.20, 0.5, 1.4); // legs (Y drop)
     }
 
     // precompute rest-inverse (R^T, -R^T t) per body + half-extents
