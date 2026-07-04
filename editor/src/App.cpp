@@ -1005,6 +1005,102 @@ void App::clearSkin() {
     mStatus = "Skin cleared";
 }
 
+// Morph the skeleton's limb chains so the bones fit inside the imported character
+// mesh (the mesh defines the look; bones adapt to it). Heuristic: for each proximal
+// joint, scale its whole subtree about that joint so the chain end reaches the mesh
+// silhouette extent along the chain's dominant axis. No landmarks/ML — approximate.
+void App::fitSkeletonToSkin() {
+    if (mSkinRawPos.empty() || mModel.skeleton.empty()) { mStatus = "Import a skin first"; return; }
+    snapshot();
+
+    // placed skin verts (same transform as applySkinPlacement, skeleton space)
+    float s = mSkinAutoScale * std::max(0.01f, mSkinUserScale);
+    std::vector<V3> P(mSkinRawPos.size());
+    for (size_t i = 0; i < P.size(); i++) {
+        const V3& r = mSkinRawPos[i];
+        P[i].x = (r.x - mSkinAutoMeshCtr.x) * s + mSkinAutoSkelCtr.x + mSkinUserOff.x;
+        P[i].z = (r.z - mSkinAutoMeshCtr.z) * s + mSkinAutoSkelCtr.z + mSkinUserOff.z;
+        P[i].y = (r.y - mSkinAutoMeshMinY) * s + mSkinAutoSkelMinY + mSkinUserOff.y;
+    }
+
+    auto idOf = [&](const std::string& id) -> int {
+        for (int i = 0; i < (int)mModel.skeleton.size(); i++) if (mModel.skeleton[i].id == id) return i;
+        return -1;
+    };
+    // subtree (indices) rooted at a node, via parent links
+    auto subtree = [&](const std::string& root) {
+        std::vector<int> out; std::vector<std::string> frontier{root};
+        while (!frontier.empty()) {
+            std::string cur = frontier.back(); frontier.pop_back();
+            int ci = idOf(cur); if (ci >= 0) out.push_back(ci);
+            for (auto& n : mModel.skeleton) if (n.parent == cur) frontier.push_back(n.id);
+        }
+        return out;
+    };
+    // scale every node in `nodes` about pivot by factor k (uniform); shrink body boxes too
+    auto scaleAbout = [&](const std::vector<int>& nodes, const Vec3& piv, double k) {
+        for (int i : nodes) {
+            Node& n = mModel.skeleton[i];
+            for (Transform* t : { &n.body.t, &n.joint.t }) {
+                t->translation[0] = piv[0] + (t->translation[0] - piv[0]) * k;
+                t->translation[1] = piv[1] + (t->translation[1] - piv[1]) * k;
+                t->translation[2] = piv[2] + (t->translation[2] - piv[2]) * k;
+            }
+            for (int a = 0; a < 3; a++) n.body.size[a] *= k;
+        }
+    };
+    auto meshReachAxis = [&](const Vec3& piv, int axis, double sgn, double band) {
+        double best = 0;
+        for (const auto& v : P) {
+            double dy = std::fabs((axis == 1 ? v.z : v.y) - (axis == 1 ? piv[2] : piv[1]));
+            double dperp = std::fabs((axis == 0 ? v.z : v.x) - (axis == 0 ? piv[2] : piv[0]));
+            if (std::max(dy, dperp) > band) continue;
+            double comp = (axis == 0 ? v.x : v.y) - piv[axis];
+            double d = comp * sgn;
+            if (d > best) best = d;
+        }
+        return best;
+    };
+
+    int fitted = 0;
+    // arms: scale ShoulderX subtree about the shoulder joint so the hand reaches the mesh span (X axis)
+    for (const char* side : { "R", "L" }) {
+        int sh = idOf(std::string("Shoulder") + side);
+        int hand = idOf(std::string("Hand") + side);
+        if (sh < 0 || hand < 0) continue;
+        Vec3 piv = mModel.skeleton[sh].joint.t.translation;
+        double handX = mModel.skeleton[hand].body.t.translation[0];
+        double sgn = (handX - piv[0]) >= 0 ? 1.0 : -1.0;
+        double reach = std::fabs(handX - piv[0]);
+        double meshReach = meshReachAxis(piv, 0, sgn, 0.28);
+        if (reach > 1e-3 && meshReach > 1e-3) {
+            double k = std::clamp(meshReach / reach, 0.3, 1.3);
+            scaleAbout(subtree(std::string("Shoulder") + side), piv, k);
+            fitted++;
+        }
+    }
+    // legs: scale FemurX subtree about the hip joint so the foot reaches the mesh bottom (Y axis)
+    for (const char* side : { "R", "L" }) {
+        int fem = idOf(std::string("Femur") + side);
+        int foot = idOf(std::string("Talus") + side);
+        if (fem < 0 || foot < 0) continue;
+        Vec3 piv = mModel.skeleton[fem].joint.t.translation;
+        double footY = mModel.skeleton[foot].body.t.translation[1];
+        double reach = std::fabs(footY - piv[1]);       // hip -> ankle
+        double meshReach = meshReachAxis(piv, 1, -1.0, 0.20); // downward
+        if (reach > 1e-3 && meshReach > 1e-3) {
+            double k = std::clamp(meshReach / reach, 0.5, 1.4);
+            scaleAbout(subtree(std::string("Femur") + side), piv, k);
+            fitted++;
+        }
+    }
+
+    syncMeshes();            // reload bone OBJ meshes at the new transforms
+    applySkinPlacement();    // rebind skin to the adapted skeleton
+    if (mSimActive) mSim.setModel(mModel);
+    mStatus = "Fitted skeleton to skin (" + std::to_string(fitted) + " limb chains)";
+}
+
 // import button + scale/offset sliders for the imported skin (Tools panel)
 void App::drawSkinControls() {
     ImGui::SeparatorText("Skin (imported mesh)");
@@ -1023,6 +1119,8 @@ void App::drawSkinControls() {
     if (ImGui::Button("Reset fit")) { mSkinUserScale = 1.0f; mSkinUserOff = V3{0,0,0}; changed = true; }
     ImGui::SameLine();
     if (ImGui::Button("Clear skin")) { clearSkin(); return; }
+    if (ImGui::Button("Fit skeleton to skin")) fitSkeletonToSkin();
+    ImGui::SameLine(); ImGui::TextDisabled("(adapt bones)");
     if (changed) applySkinPlacement();
     ImGui::TextDisabled("%zu tris  |  auto x%.2f", mSkinRawPos.size()/3, mSkinAutoScale);
 }

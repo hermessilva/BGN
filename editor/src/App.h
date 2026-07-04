@@ -75,6 +75,7 @@ private:
     void applySkinPlacement();             // re-place raw mesh -> bindSkin
     void clearSkin();
     void drawSkinControls();               // scale/offset sliders
+    void fitSkeletonToSkin();              // morph bone chains to the imported mesh silhouette
 
     // fills (generated skin/tissue envelopes), async generation with progress
     std::atomic<float> mFillProgress{0.0f};
