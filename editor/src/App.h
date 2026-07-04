@@ -85,7 +85,7 @@ private:
     void fitSkeletonToSkin();              // morph bone chains to the imported mesh silhouette
     void fitSelectedBoneToSkin();          // resize the selected bone box to its local mesh (L/R kept symmetric)
     void rebindSkin();                     // re-bind skin to the current skeleton (after manual gizmo edits)
-    bool mHideRig = true;                  // when a skin is shown, hide the bones/muscles (character only)
+    bool mHideRig = false;                 // optional: hide bones/muscles when a skin is shown (off = Visibility checkboxes rule)
 
     // fills (generated skin/tissue envelopes), async generation with progress
     std::atomic<float> mFillProgress{0.0f};

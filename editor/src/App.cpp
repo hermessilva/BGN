@@ -989,7 +989,7 @@ bool App::importSkinFromPath(const std::string& path) {
     mSkinOrigPos = std::move(pos);
     mSkinOrigNrm = std::move(nrm);
     rebuildSkinFromOrig();   // uses current mSkinRotDeg / mSkinUserScale / mSkinUserOff
-    mShowSkin = true; mShowMesh = false;
+    mShowSkin = true;        // leave Bones/Muscles/Mesh visibility to their checkboxes
     return true;
 }
 
@@ -1010,10 +1010,8 @@ void App::loadSkinFromModel() {
     mSkinRotDeg   = V3{ (float)mModel.skin.rotDeg[0], (float)mModel.skin.rotDeg[1], (float)mModel.skin.rotDeg[2] };
     mSkinUserScale = (float)mModel.skin.userScale;
     mSkinUserOff  = V3{ (float)mModel.skin.offset[0], (float)mModel.skin.offset[1], (float)mModel.skin.offset[2] };
-    if (importSkinFromPath(mModel.skin.obj)) {
-        mShowBones = false; mShowMuscles = false;   // show the character, not the internals
-        mStatus = "Skin loaded from project: " + std::to_string(mSkinOrigPos.size() / 3) + " tris";
-    }
+    if (importSkinFromPath(mModel.skin.obj))
+        mStatus = "Skin loaded from project: " + std::to_string(mSkinOrigPos.size() / 3) + " tris (toggle 'Hide rig' for character-only)";
 }
 
 // apply the user orientation fix to the original mesh, recompute the height-match
