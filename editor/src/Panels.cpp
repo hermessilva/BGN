@@ -43,6 +43,7 @@ void App::drawMenuBar() {
         }
         if (ImGui::BeginMenu("Anatomy")) {
             if (ImGui::MenuItem("Import OpenSim atlas (.osim)...")) importOsim();
+            if (ImGui::MenuItem("Import mesh as skin (obj/glb/fbx/stl)...")) importSkinMesh();
             if (ImGui::MenuItem("Mirror muscle L<->R")) mirrorSelectedMuscle();
             ImGui::EndMenu();
         }

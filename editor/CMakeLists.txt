@@ -7,6 +7,7 @@ find_package(imgui CONFIG REQUIRED)
 find_package(imguizmo CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(tinyxml2 CONFIG REQUIRED)
+find_package(assimp CONFIG REQUIRED)
 find_package(DART REQUIRED COMPONENTS collision-bullet utils CONFIG)
 find_package(boost_asio CONFIG REQUIRED)
 
@@ -23,6 +24,7 @@ target_link_libraries(editor PRIVATE
   imguizmo::imguizmo
   nlohmann_json::nlohmann_json
   tinyxml2::tinyxml2
+  assimp::assimp
   dart
   dart-collision-bullet
   dart-utils

@@ -10,6 +10,10 @@
 #include <sstream>
 #include <functional>
 #include <cstring>
+#include <algorithm>
+#include <assimp/Importer.hpp>
+#include <assimp/scene.h>
+#include <assimp/postprocess.h>
 
 namespace ed {
 
@@ -909,6 +913,77 @@ void App::importOsim() {
     mAtlas = ImportOsimMuscles(p, &err);
     mStatus = mAtlas.empty() ? ("Atlas: " + err)
                              : ("Atlas loaded: " + std::to_string(mAtlas.size()) + " reference muscles");
+}
+
+// Import a rigless mesh (obj/glb/fbx/stl/3mf/dxf via assimp) as the model's skin:
+// deindex to a triangle soup, auto-scale/align to the skeleton's rest bbox, then
+// bind each vertex to the nearest body so it deforms with the live sim.
+void App::importSkinMesh() {
+    if (mModel.skeleton.empty()) { mStatus = "Load a model first"; return; }
+    std::string path = openFileDialog(
+        "Mesh (obj/glb/fbx/stl/3mf/dxf)\0*.obj;*.glb;*.gltf;*.fbx;*.stl;*.3mf;*.dxf;*.ply\0All\0*.*\0");
+    if (path.empty()) return;
+
+    Assimp::Importer imp;
+    const aiScene* sc = imp.ReadFile(path,
+        aiProcess_Triangulate | aiProcess_GenSmoothNormals |
+        aiProcess_PreTransformVertices | aiProcess_JoinIdenticalVertices);
+    if (!sc || !sc->mRootNode || sc->mNumMeshes == 0) {
+        mStatus = std::string("Mesh import failed: ") + imp.GetErrorString(); return;
+    }
+
+    std::vector<V3> pos, nrm;
+    for (unsigned mi = 0; mi < sc->mNumMeshes; mi++) {
+        const aiMesh* m = sc->mMeshes[mi];
+        if (!m->HasNormals()) continue;
+        for (unsigned fi = 0; fi < m->mNumFaces; fi++) {
+            const aiFace& f = m->mFaces[fi];
+            if (f.mNumIndices != 3) continue;
+            for (int k = 0; k < 3; k++) {
+                unsigned idx = f.mIndices[k];
+                const aiVector3D& v = m->mVertices[idx];
+                const aiVector3D& n = m->mNormals[idx];
+                pos.push_back(V3{ v.x, v.y, v.z });
+                nrm.push_back(V3{ n.x, n.y, n.z });
+            }
+        }
+    }
+    if (pos.empty()) { mStatus = "Mesh has no triangles/normals"; return; }
+
+    // mesh bbox
+    V3 mn = pos[0], mx = pos[0];
+    for (const auto& p : pos) {
+        mn.x = std::min(mn.x, p.x); mn.y = std::min(mn.y, p.y); mn.z = std::min(mn.z, p.z);
+        mx.x = std::max(mx.x, p.x); mx.y = std::max(mx.y, p.y); mx.z = std::max(mx.z, p.z);
+    }
+    // skeleton rest bbox (body translations expanded by half-extents)
+    V3 smn{ 1e30f,1e30f,1e30f }, smx{ -1e30f,-1e30f,-1e30f };
+    for (int b = 0; b < (int)mModel.skeleton.size(); b++) {
+        const Node& n = mModel.skeleton[b];
+        V3 c{ (float)n.body.t.translation[0], (float)n.body.t.translation[1], (float)n.body.t.translation[2] };
+        float he = n.body.type == "Box"
+            ? 0.5f * (float)std::max({ n.body.size[0], n.body.size[1], n.body.size[2] })
+            : (float)n.body.radius;
+        smn.x = std::min(smn.x, c.x - he); smn.y = std::min(smn.y, c.y - he); smn.z = std::min(smn.z, c.z - he);
+        smx.x = std::max(smx.x, c.x + he); smx.y = std::max(smx.y, c.y + he); smx.z = std::max(smx.z, c.z + he);
+    }
+    float meshH = std::max(1e-4f, mx.y - mn.y);
+    float skelH = std::max(1e-4f, smx.y - smn.y);
+    float s = (skelH / meshH) * mSkinImportScale;              // match height (Y-up assumed)
+    V3 meshCtr{ (mn.x + mx.x) * 0.5f, 0, (mn.z + mx.z) * 0.5f };
+    V3 skelCtr{ (smn.x + smx.x) * 0.5f, 0, (smn.z + smx.z) * 0.5f };
+    for (size_t i = 0; i < pos.size(); i++) {
+        V3& p = pos[i];
+        p.x = (p.x - meshCtr.x) * s + skelCtr.x;               // center X/Z
+        p.z = (p.z - meshCtr.z) * s + skelCtr.z;
+        p.y = (p.y - mn.y) * s + smn.y;                        // align feet to skeleton bottom
+        // normals only need the (uniform) scale sign -> leave direction, renormalize in bind
+    }
+
+    bindSkin(pos, nrm);
+    mShowSkin = true; mShowMesh = false;
+    mStatus = "Skin imported: " + std::to_string(pos.size() / 3) + " tris (scaled x" +
+              std::to_string(s) + ")";
 }
 void App::applyAtlas(const AtlasEntry& a) {
     if (Muscle* mu = selMuscle()) {

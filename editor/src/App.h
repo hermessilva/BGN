@@ -150,6 +150,10 @@ private:
     TrainBridge mTrain;
     void startTraining();
 
+    // import an external (rigless) mesh as the skin, auto-scaled to the skeleton
+    void importSkinMesh();
+    float mSkinImportScale = 1.0f;
+
     // anatomy actions
     void importOsim();
     void applyAtlas(const AtlasEntry& a);
