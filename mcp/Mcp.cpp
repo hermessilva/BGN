@@ -3,6 +3,7 @@
 #include "Batch.h"
 #include "Kinematics.h"
 #include "Complete.h"
+#include "BindSkin.h"
 
 namespace mass {
 using json = nlohmann::json;
@@ -24,6 +25,7 @@ std::vector<std::string> McpServer::toolNames() {
              "scale_bone", "translate_subtree", "rotate_joint",
              "generate_fingers", "list_gaps",
              "load_atlas", "validate_anatomy", "sync_from_atlas",
+             "bind_skin",
              "save", "load" };
 }
 
@@ -76,6 +78,19 @@ json McpServer::callTool(const std::string& name, const json& a, Model& m, Index
             : Complete::generateFingers(m, a.value("hand", ""), cfg);
         mutated = !created.empty();
         return { {"created", created} };
+    }
+
+    // ---- skin ----
+    if (name == "bind_skin") {
+        std::string e;
+        json r = BindSkin::bind(m, a.value("obj", ""),
+                                v3(a.value("rot", json::array({0,0,0}))),
+                                a.value("scale", 1.0),
+                                v3(a.value("offset", json::array({0,0,0}))),
+                                a.value("fit", true), &e);
+        if (r.is_null()) return { {"ok", false}, {"error", e} };
+        mutated = true;   // skin descriptor set + (if fit) skeleton morphed
+        return r;
     }
 
     // ---- atlas ----

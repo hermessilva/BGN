@@ -109,6 +109,16 @@ struct Light {
     bool enabled = true;
 };
 
+// Imported character skin mesh bound to the skeleton (the mesh defines the look;
+// bones deform it). Persisted as a descriptor; the binding is recomputed on load.
+struct Skin {
+    std::string obj;          // mesh path (obj/glb/... resolved relative to the .mass)
+    Vec3 rotDeg{0,0,0};       // orientation fix (Euler XYZ, degrees)
+    double userScale = 1.0;   // multiplier on the auto height-fit
+    Vec3 offset{0,0,0};       // world offset (m)
+    bool present = false;
+};
+
 // ---- GaitNet env.xml configuration (this project's master file) ----
 struct EnvConfig {
     std::string actuator = "mass";
@@ -179,6 +189,7 @@ struct Model {
     Training training;
     EnvConfig env;                   // GaitNet env.xml master config
     Parameters params;               // <parameter> block
+    Skin skin;                       // imported character skin (descriptor)
     std::vector<Light> lights;       // scene lighting (editor)
     double ambient = 0.25;           // global ambient term
     std::vector<Fill> fills;         // generated skin/tissue fills

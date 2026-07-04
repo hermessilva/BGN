@@ -10,7 +10,7 @@ find_package(boost_asio CONFIG REQUIRED)
 
 set(_lib_srcs
     MassModel.cpp Index.cpp Kinematics.cpp DofMap.cpp Batch.cpp
-    Complete.cpp Query.cpp Atlas.cpp Groom.cpp Mcp.cpp)
+    Complete.cpp Query.cpp Atlas.cpp Groom.cpp BindSkin.cpp Mcp.cpp)
 
 # Standalone MCP server over TCP (newline-delimited JSON-RPC).
 add_executable(gaitnet-mcp server/main.cpp ${_lib_srcs})

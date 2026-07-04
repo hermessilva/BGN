@@ -303,7 +303,8 @@ void App::loadProjectPath(const std::string& path) {
     std::string err;
     auto m = Model::LoadMass(path, &err);
     if (m) { mModel = *m; mProjectPath = path; mDataRoot = deriveRoot(path);
-             seedLightsIfEmpty(); loadMeshes(); applyDefaultFill(); mSel.clear(); mUndo.clear(); mRedo.clear();
+             seedLightsIfEmpty(); loadMeshes(); applyDefaultFill(); loadSkinFromModel();
+             mSel.clear(); mUndo.clear(); mRedo.clear();
              mStatus = "Opened: " + path; }
     else mStatus = "Open error: " + err;
 }
@@ -842,7 +843,8 @@ void App::openMass() {
     std::string err;
     auto m = Model::LoadMass(p, &err);
     if (m) { mModel = *m; mProjectPath = p; mDataRoot = deriveRoot(p);
-             seedLightsIfEmpty(); loadMeshes(); applyDefaultFill(); mSel.clear(); mUndo.clear(); mRedo.clear();
+             seedLightsIfEmpty(); loadMeshes(); applyDefaultFill(); loadSkinFromModel();
+             mSel.clear(); mUndo.clear(); mRedo.clear();
              mStatus = "Opened: " + p; }
     else mStatus = "Open error: " + err;
 }
@@ -850,6 +852,14 @@ void App::saveMass(bool as) {
     std::string p = mProjectPath;
     if (as || p.empty()) p = saveFileDialog();
     if (p.empty()) return;
+    // persist the current skin descriptor
+    mModel.skin.present = !mSkinObjPath.empty();
+    if (mModel.skin.present) {
+        mModel.skin.obj = mSkinObjPath;
+        mModel.skin.rotDeg = { mSkinRotDeg.x, mSkinRotDeg.y, mSkinRotDeg.z };
+        mModel.skin.userScale = mSkinUserScale;
+        mModel.skin.offset = { mSkinUserOff.x, mSkinUserOff.y, mSkinUserOff.z };
+    }
     std::string err;
     if (mModel.SaveMass(p, &err)) { mProjectPath = p; mStatus = "Saved: " + p; }
     else mStatus = "Save error: " + err;
@@ -918,20 +928,15 @@ void App::importOsim() {
 // Import a rigless mesh (obj/glb/fbx/stl/3mf/dxf via assimp) as the model's skin:
 // deindex to a triangle soup, auto-scale/align to the skeleton's rest bbox, then
 // bind each vertex to the nearest body so it deforms with the live sim.
-void App::importSkinMesh() {
-    if (mModel.skeleton.empty()) { mStatus = "Load a model first"; return; }
-    std::string path = openFileDialog(
-        "Mesh (obj/glb/fbx/stl/3mf/dxf)\0*.obj;*.glb;*.gltf;*.fbx;*.stl;*.3mf;*.dxf;*.ply\0All\0*.*\0");
-    if (path.empty()) return;
-
+bool App::importSkinFromPath(const std::string& path) {
+    if (mModel.skeleton.empty() || path.empty()) return false;
     Assimp::Importer imp;
     const aiScene* sc = imp.ReadFile(path,
         aiProcess_Triangulate | aiProcess_GenSmoothNormals |
         aiProcess_PreTransformVertices | aiProcess_JoinIdenticalVertices);
     if (!sc || !sc->mRootNode || sc->mNumMeshes == 0) {
-        mStatus = std::string("Mesh import failed: ") + imp.GetErrorString(); return;
+        mStatus = std::string("Mesh import failed: ") + imp.GetErrorString(); return false;
     }
-
     std::vector<V3> pos, nrm;
     for (unsigned mi = 0; mi < sc->mNumMeshes; mi++) {
         const aiMesh* m = sc->mMeshes[mi];
@@ -948,15 +953,36 @@ void App::importSkinMesh() {
             }
         }
     }
-    if (pos.empty()) { mStatus = "Mesh has no triangles/normals"; return; }
-
+    if (pos.empty()) { mStatus = "Mesh has no triangles/normals"; return false; }
+    mSkinObjPath = path;
     mSkinOrigPos = std::move(pos);
     mSkinOrigNrm = std::move(nrm);
-    mSkinRotDeg = V3{ 0,0,0 };
-    mSkinUserScale = 1.0f; mSkinUserOff = V3{ 0,0,0 };
-    rebuildSkinFromOrig();
+    rebuildSkinFromOrig();   // uses current mSkinRotDeg / mSkinUserScale / mSkinUserOff
     mShowSkin = true; mShowMesh = false;
-    mStatus = "Skin imported: " + std::to_string(mSkinOrigPos.size() / 3) + " tris (use Rotate if lying down)";
+    return true;
+}
+
+void App::importSkinMesh() {
+    if (mModel.skeleton.empty()) { mStatus = "Load a model first"; return; }
+    std::string path = openFileDialog(
+        "Mesh (obj/glb/fbx/stl/3mf/dxf)\0*.obj;*.glb;*.gltf;*.fbx;*.stl;*.3mf;*.dxf;*.ply\0All\0*.*\0");
+    if (path.empty()) return;
+    mSkinRotDeg = V3{ 0,0,0 }; mSkinUserScale = 1.0f; mSkinUserOff = V3{ 0,0,0 };
+    if (importSkinFromPath(path))
+        mStatus = "Skin imported: " + std::to_string(mSkinOrigPos.size() / 3) + " tris (use Rotate if lying down)";
+}
+
+// Apply a Model.skin descriptor loaded from a .mass (obj + placement) — e.g. one
+// produced by the MCP bind_skin tool. Called after opening a project.
+void App::loadSkinFromModel() {
+    if (!mModel.skin.present || mModel.skin.obj.empty()) return;
+    mSkinRotDeg   = V3{ (float)mModel.skin.rotDeg[0], (float)mModel.skin.rotDeg[1], (float)mModel.skin.rotDeg[2] };
+    mSkinUserScale = (float)mModel.skin.userScale;
+    mSkinUserOff  = V3{ (float)mModel.skin.offset[0], (float)mModel.skin.offset[1], (float)mModel.skin.offset[2] };
+    if (importSkinFromPath(mModel.skin.obj)) {
+        mShowBones = false; mShowMuscles = false;   // show the character, not the internals
+        mStatus = "Skin loaded from project: " + std::to_string(mSkinOrigPos.size() / 3) + " tris";
+    }
 }
 
 // apply the user orientation fix to the original mesh, recompute the height-match

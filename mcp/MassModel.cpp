@@ -170,6 +170,10 @@ static json toJson(const Model& m) {
         {"torsion", prlist(m.params.torsion)}, {"muscle_length", prlist(m.params.muscle_length)},
         {"muscle_force", prlist(m.params.muscle_force)}
     };
+    if (m.skin.present) {
+        root["skin"] = { {"obj", m.skin.obj}, {"rotDeg", j(m.skin.rotDeg)},
+                         {"userScale", m.skin.userScale}, {"offset", j(m.skin.offset)} };
+    }
     return root;
 }
 
@@ -336,6 +340,14 @@ static Model fromJson(const json& root) {
         if (p.contains("torsion")) rd(p["torsion"], m.params.torsion);
         if (p.contains("muscle_length")) rd(p["muscle_length"], m.params.muscle_length);
         if (p.contains("muscle_force")) rd(p["muscle_force"], m.params.muscle_force);
+    }
+    if (root.contains("skin")) {
+        const auto& s = root["skin"];
+        m.skin.obj = s.value("obj", "");
+        if (s.contains("rotDeg")) m.skin.rotDeg = v3(s["rotDeg"]);
+        m.skin.userScale = s.value("userScale", 1.0);
+        if (s.contains("offset")) m.skin.offset = v3(s["offset"]);
+        m.skin.present = !m.skin.obj.empty();
     }
     return m;
 }

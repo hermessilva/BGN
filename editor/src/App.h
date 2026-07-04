@@ -167,7 +167,10 @@ private:
     void startTraining();
 
     // import an external (rigless) mesh as the skin, auto-scaled to the skeleton
-    void importSkinMesh();
+    void importSkinMesh();                       // via file dialog
+    bool importSkinFromPath(const std::string& path);  // load mesh file -> orig -> place
+    void loadSkinFromModel();                    // apply mModel.skin (obj + placement) on open
+    std::string mSkinObjPath;                    // path of the loaded skin mesh
     float mSkinImportScale = 1.0f;
 
     // anatomy actions
