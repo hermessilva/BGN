@@ -172,7 +172,10 @@ void App::drawToolbar() {
         bool paused = mSim.paused();
         if (ImGui::Checkbox("Pause", &paused)) mSim.setPaused(paused);
         if (ImGui::SliderFloat("Muscle activation", &mActivation, 0.0f, 1.0f)) mSim.setActivation(mActivation);
-        ImGui::Text("t = %.2fs  |  %s", mSim.simTime(), mSim.status().c_str());
+        ImGui::Checkbox("Live apply edits", &mLiveSimApply);
+        if (!mLiveSimApply) { ImGui::SameLine(); if (ImGui::Button("Apply now")) applySimNow(); }
+        bool dirty = (mSimSigApplied != mSimSigPending);
+        ImGui::Text("t = %.2fs  |  %s%s", mSim.simTime(), mSim.status().c_str(), dirty ? "  (edits pending)" : "");
     }
     ImGui::End();
 }
@@ -594,6 +597,9 @@ void App::frame() {
     drawGaitNet();
     drawLights();
     drawFillsPanel();
+
+    // reflect edits in the running sim (debounced rebuild)
+    maybeAutoApplySim();
 
     // fill generation: finalize when the worker finishes, and show a progress modal
     if (mFillRunning && mFillDone.load()) finalizeFill();

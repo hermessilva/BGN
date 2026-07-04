@@ -91,6 +91,13 @@ private:
     std::string mDataRoot = ".";
     std::map<std::string, Transform> mLivePose;
     void toggleSim();
+    // auto-apply model edits to the running sim (debounced rebuild)
+    bool mLiveSimApply = true;
+    size_t mSimSigPending = 0, mSimSigApplied = 0;
+    double mSimDirtyAt = -1.0;
+    size_t simSignature() const;   // hash of the sim-relevant model fields
+    void maybeAutoApplySim();      // push model to SimBridge when edits settle
+    void applySimNow();            // force a rebuild from the current model
     M4 liveBodyMatrix(const Node& n) const;   // current world (sim pose if simulating, else body.t)
     M4 restBodyMatrix(int i) const;           // fixed authoring rest pose of body i
     std::vector<Transform> mRestBody;         // captured rest pose (mesh/skin authoring reference)

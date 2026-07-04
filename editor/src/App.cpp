@@ -8,6 +8,8 @@
 #include <cstdio>
 #include <fstream>
 #include <sstream>
+#include <functional>
+#include <cstring>
 
 namespace ed {
 
@@ -546,7 +548,60 @@ void App::toggleSim() {
         mSim.setPaused(false);
         mSim.start();
         mSimActive = true;
+        mSimSigApplied = mSimSigPending = simSignature();
         mStatus = "Simulation started";
+    }
+}
+
+// hash the model fields that change what the live sim builds (skeleton geometry,
+// muscle Hill params + routing, joint PD/limits, env timing/actuation).
+static inline void hashD(size_t& h, double d) {
+    size_t b = 0; std::memcpy(&b, &d, sizeof(double));
+    h ^= b + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2);
+}
+static inline void hashV3(size_t& h, const Vec3& v) { hashD(h, v[0]); hashD(h, v[1]); hashD(h, v[2]); }
+static inline void hashS(size_t& h, const std::string& s) {
+    h ^= std::hash<std::string>{}(s) + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2);
+}
+size_t App::simSignature() const {
+    size_t h = 1469598103934665603ULL;
+    for (const auto& n : mModel.skeleton) {
+        hashS(h, n.id); hashS(h, n.parent); hashD(h, n.endeffector ? 1 : 0);
+        hashS(h, n.body.type); hashD(h, n.body.mass); hashV3(h, n.body.size);
+        hashD(h, n.body.radius); hashD(h, n.body.height); hashD(h, n.body.contact ? 1 : 0);
+        hashV3(h, n.body.t.translation); for (double x : n.body.t.linear) hashD(h, x);
+        hashS(h, n.joint.type); hashS(h, n.joint.bvh);
+        hashV3(h, n.joint.lower); hashV3(h, n.joint.upper); hashV3(h, n.joint.axis);
+        hashV3(h, n.joint.kp); hashV3(h, n.joint.kv);
+        hashV3(h, n.joint.t.translation); for (double x : n.joint.t.linear) hashD(h, x);
+    }
+    for (const auto& m : mModel.muscles) {
+        hashS(h, m.name); hashD(h, m.f0); hashD(h, m.lm); hashD(h, m.lt);
+        hashD(h, m.pen_angle); hashD(h, m.lmax);
+        for (const auto& w : m.waypoints) { hashS(h, w.body); hashV3(h, w.p); }
+    }
+    const auto& e = mModel.env;
+    hashS(h, e.actuator); hashD(h, e.defaultKp); hashD(h, e.defaultKv); hashD(h, e.damping);
+    hashD(h, e.simHz); hashD(h, e.controlHz); hashD(h, e.actionScale);
+    hashS(h, e.bvh_file); hashD(h, e.residual ? 1 : 0); hashD(h, e.enforceSymmetry ? 1 : 0);
+    return h;
+}
+
+void App::applySimNow() {
+    if (!mSimActive) return;
+    mSim.setModel(mModel);
+    mSimSigApplied = mSimSigPending = simSignature();
+    mStatus = "Applied edits to sim";
+}
+
+void App::maybeAutoApplySim() {
+    if (!mSimActive) return;
+    size_t cur = simSignature();
+    double now = glfwGetTime();
+    if (cur != mSimSigPending) { mSimSigPending = cur; mSimDirtyAt = now; }  // an edit landed
+    if (mLiveSimApply && mSimSigApplied != mSimSigPending && (now - mSimDirtyAt) > 0.4) {
+        mSim.setModel(mModel);            // rebuild Environment from the edited model
+        mSimSigApplied = mSimSigPending;
     }
 }
 
