@@ -649,6 +649,10 @@ void App::drawScene() {
     M4 vp = mul(mCam.proj(aspect), mCam.view());
     mRen.begin(vp, mCam.eye());
 
+    // when a skin mesh is shown, hide the rig (bones/muscles) so only the character shows
+    const bool skinShown = mShowSkin && !mSkinBones.empty();
+    const bool rig = !(skinShown && mHideRig);
+
     // scene lights -> renderer
     std::vector<Renderer::LightGPU> gpu;
     for (const auto& L : mModel.lights) {
@@ -678,7 +682,7 @@ void App::drawScene() {
         V3 he = n.body.type == "Box"
             ? V3{(float)n.body.size[0]*0.5f, (float)n.body.size[1]*0.5f, (float)n.body.size[2]*0.5f}
             : V3{(float)n.body.radius, (float)n.body.radius, (float)n.body.radius};
-        if (mShowBones) {
+        if (mShowBones && rig) {
             const MeshData* md = (i < (int)mMeshes.size()) ? &mMeshes[i] : nullptr;
             if (mShowMesh && md && md->gpuId != 0) {
                 // mesh authored in rest world space -> follow current body via delta (on GPU)
@@ -692,7 +696,7 @@ void App::drawScene() {
             }
         }
         // joint marker
-        if (mShowJoints) {
+        if (mShowJoints && rig) {
             M4 jm = fromTransform(n.joint.t);
             mRen.axes(jm, selJoint ? 0.12f : 0.05f);
             if (selJoint) mRen.point(mulPoint(jm, {0,0,0}), {1.0f,0.8f,0.2f});
@@ -700,7 +704,7 @@ void App::drawScene() {
     }
 
     // muscles
-    if (mShowMuscles) {
+    if (mShowMuscles && rig) {
         for (int i = 0; i < (int)mModel.muscles.size(); i++) {
             const Muscle& mu = mModel.muscles[i];
             bool selM = ((mSel.type == SelType::Muscle || mSel.type == SelType::Waypoint) && mSel.index == i);
@@ -1168,8 +1172,8 @@ void App::fitSkeletonToSkin() {
         double k = std::clamp(kSum / kN, lo, hi);
         for (auto& s : sides) { scaleAbout(subtree(s.first), s.second, k); fitted++; }
     };
-    fitPair("Shoulder", "Hand", 0, 1.0, 0.28, 0.3, 1.3);   // arms (X span)
-    fitPair("Femur",    "Talus", 1, -1.0, 0.20, 0.5, 1.4); // legs (Y drop)
+    fitPair("Shoulder", "Hand", 0, 1.0, 0.12, 0.25, 1.2);  // arms (X span) — tight tube excludes wings
+    fitPair("Femur",    "Talus", 1, -1.0, 0.13, 0.5, 1.4); // legs (Y drop)
 
     syncMeshes();            // reload bone OBJ meshes at the new transforms
     applySkinPlacement();    // rebind skin to the adapted skeleton
@@ -1249,6 +1253,8 @@ void App::drawSkinControls() {
     }
     ImGui::SameLine();
     if (ImGui::Checkbox("Show", &mShowSkin)) {}
+    ImGui::SameLine();
+    ImGui::Checkbox("Hide rig", &mHideRig);   // character-only view
     // orientation fix (GLB/FBX from generators are often Z-up or face a different way)
     bool rot = false;
     ImGui::TextUnformatted("Orient:"); ImGui::SameLine();

@@ -171,8 +171,10 @@ json BindSkin::bind(Model& m, const std::string& obj, const Vec3& rotDeg,
             double k = std::clamp(kSum / kN, lo, hi);   // shared, symmetric scale
             for (auto& s : sides) { scaleSubtree(m, s.root, s.piv, k); fitted++; }
         };
-        fitPair("Shoulder", "Hand", 0, 1.0, 0.28, 0.3, 1.3);   // arms (X span)
-        fitPair("Femur",    "Talus", 1, -1.0, 0.20, 0.5, 1.4); // legs (Y drop)
+        // tight perpendicular band = a tube around the limb axis, so broad off-limb
+        // geometry (wings, hair, skirt) does not inflate the measured reach
+        fitPair("Shoulder", "Hand", 0, 1.0, 0.12, 0.25, 1.2);  // arms (X span)
+        fitPair("Femur",    "Talus", 1, -1.0, 0.13, 0.5, 1.4); // legs (Y drop)
     }
 
     // precompute rest-inverse (R^T, -R^T t) per body + half-extents
