@@ -9,6 +9,7 @@
 #include <string>
 #include <deque>
 #include <map>
+#include <array>
 #include <atomic>
 #include <thread>
 
@@ -58,9 +59,12 @@ private:
     void drawMuscleTube(const Muscle& mu, const V3& color);
     void regenerateSkin();
     void drawFillsPanel();
-    // skin skinning: each vertex bound to nearest body, stored in that body's local space
-    std::vector<V3> mSkinLocalPos, mSkinLocalNrm;
-    std::vector<int> mSkinBone;
+    // smooth linear-blend skinning: each vertex weighted to its K nearest bodies,
+    // stored in each of those bodies' rest-local space (smooth joints, no rigid cracks)
+    static constexpr int SKIN_K = 4;
+    std::vector<std::array<int, SKIN_K>> mSkinBones;      // bone indices per vertex
+    std::vector<std::array<float, SKIN_K>> mSkinW;        // blend weights (sum 1)
+    std::vector<std::array<V3, SKIN_K>> mSkinLP, mSkinLN; // rest-local pos/nrm per bone
     void updateSkinPose();   // rebuild live skin verts from current body transforms
     void bindSkin(const std::vector<V3>& pos, const std::vector<V3>& nrm); // bind + upload
 

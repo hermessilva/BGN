@@ -127,28 +127,48 @@ void App::beginFill(const std::string& name) { startFillGeneration(name); }
 // body, stored in that body's local space, then upload the current live pose.
 void App::bindSkin(const std::vector<V3>& pos, const std::vector<V3>& nrm) {
     size_t nv = pos.size();
-    mSkinLocalPos.assign(nv, V3{});
-    mSkinLocalNrm.assign(nv, V3{});
-    mSkinBone.assign(nv, 0);
+    mSkinBones.assign(nv, {});
+    mSkinW.assign(nv, {});
+    mSkinLP.assign(nv, {});
+    mSkinLN.assign(nv, {});
     int nb = (int)mModel.skeleton.size();
     if (nb == 0) return;
     std::vector<M4> restInv(nb);
     for (int b = 0; b < nb; b++) restInv[b] = rigidInverse(restBodyMatrix(b));
     float bs = (float)mSkinParams.bodyScale;
     for (size_t i = 0; i < nv; i++) {
-        int best = 0; float bestK = 1e30f;
+        // ellipsoid distance to every body, keep the SKIN_K nearest
+        int idx[SKIN_K]; float dk[SKIN_K];
+        for (int j = 0; j < SKIN_K; j++) { idx[j] = 0; dk[j] = 1e30f; }
         for (int b = 0; b < nb; b++) {
             const Node& n = mModel.skeleton[b];
             V3 lp = mulPoint(restInv[b], pos[i]);
             V3 he = n.body.type == "Box"
                 ? V3{(float)n.body.size[0]*0.5f*bs, (float)n.body.size[1]*0.5f*bs, (float)n.body.size[2]*0.5f*bs}
                 : V3{(float)n.body.radius*bs, (float)n.body.radius*bs, (float)n.body.radius*bs};
-            float k = length(V3{ lp.x/std::max(he.x,1e-4f), lp.y/std::max(he.y,1e-4f), lp.z/std::max(he.z,1e-4f) });
-            if (k < bestK) { bestK = k; best = b; }
+            float d = length(V3{ lp.x/std::max(he.x,1e-4f), lp.y/std::max(he.y,1e-4f), lp.z/std::max(he.z,1e-4f) });
+            // insert into the sorted top-K
+            for (int j = 0; j < SKIN_K; j++) if (d < dk[j]) {
+                for (int t = SKIN_K-1; t > j; t--) { dk[t]=dk[t-1]; idx[t]=idx[t-1]; }
+                dk[j]=d; idx[j]=b; break;
+            }
         }
-        mSkinBone[i] = best;
-        mSkinLocalPos[i] = mulPoint(restInv[best], pos[i]);
-        mSkinLocalNrm[i] = mulDir(restInv[best], nrm[i]);
+        // smooth weights: inverse-distance falloff relative to the nearest, normalized
+        float d0 = std::max(dk[0], 1e-4f);
+        float w[SKIN_K], wsum = 0;
+        for (int j = 0; j < SKIN_K; j++) {
+            float r = dk[j] / d0;                 // 1 at nearest, grows outward
+            float wj = 1.0f / (r * r * r + 1e-4f);// sharp-ish falloff
+            if (dk[j] > 1e29f) wj = 0;
+            w[j] = wj; wsum += wj;
+        }
+        if (wsum < 1e-8f) { w[0] = 1; wsum = 1; }
+        for (int j = 0; j < SKIN_K; j++) {
+            mSkinBones[i][j] = idx[j];
+            mSkinW[i][j] = w[j] / wsum;
+            mSkinLP[i][j] = mulPoint(restInv[idx[j]], pos[i]);
+            mSkinLN[i][j] = mulDir(restInv[idx[j]], nrm[i]);
+        }
     }
     mShowSkin = nv > 0;
     updateSkinPose();
@@ -254,7 +274,7 @@ void App::setDefaultFill(int idx) {
 void App::deleteFill(int idx) {
     if (idx < 0 || idx >= (int)mModel.fills.size()) return;
     mModel.fills.erase(mModel.fills.begin() + idx);
-    if (mActiveFill == idx) { mActiveFill = -1; mShowSkin = false; mSkinLocalPos.clear(); }
+    if (mActiveFill == idx) { mActiveFill = -1; mShowSkin = false; mSkinBones.clear(); }
     else if (mActiveFill > idx) mActiveFill--;
 }
 void App::applyDefaultFill() {
@@ -263,16 +283,23 @@ void App::applyDefaultFill() {
 }
 
 void App::updateSkinPose() {
-    size_t nv = mSkinLocalPos.size();
+    size_t nv = mSkinBones.size();
     if (nv == 0) return;
     std::vector<V3> pos(nv), nrm(nv);
     int nb = (int)mModel.skeleton.size();
     std::vector<M4> M(nb);
     for (int b = 0; b < nb; b++) M[b] = liveBodyMatrix(mModel.skeleton[b]);
     for (size_t i = 0; i < nv; i++) {
-        int b = mSkinBone[i]; if (b < 0 || b >= nb) b = 0;
-        pos[i] = mulPoint(M[b], mSkinLocalPos[i]);
-        nrm[i] = normalize(mulDir(M[b], mSkinLocalNrm[i]));
+        V3 p{0,0,0}, n{0,0,0};
+        for (int j = 0; j < SKIN_K; j++) {
+            float w = mSkinW[i][j]; if (w <= 0) continue;
+            int b = mSkinBones[i][j]; if (b < 0 || b >= nb) continue;
+            V3 pj = mulPoint(M[b], mSkinLP[i][j]);
+            V3 nj = mulDir(M[b], mSkinLN[i][j]);
+            p.x += w*pj.x; p.y += w*pj.y; p.z += w*pj.z;
+            n.x += w*nj.x; n.y += w*nj.y; n.z += w*nj.z;
+        }
+        pos[i] = p; nrm[i] = normalize(n);
     }
     mRen.setSkinMesh(pos, nrm);
 }
@@ -692,7 +719,7 @@ void App::drawScene() {
     }
 
     // generated tissue fill with rigid skinning so it follows the skeleton
-    if (mShowSkin && !mSkinLocalPos.empty()) {
+    if (mShowSkin && !mSkinBones.empty()) {
         updateSkinPose();                           // deform to the live pose each frame
         M4 ident;
         mRen.drawSkin(ident, V3{0.86f, 0.66f, 0.56f});
@@ -1050,7 +1077,7 @@ void App::applySkinPlacement() {
 void App::clearSkin() {
     mSkinOrigPos.clear(); mSkinOrigNrm.clear();
     mSkinRawPos.clear(); mSkinRawNrm.clear();
-    mSkinLocalPos.clear(); mSkinLocalNrm.clear(); mSkinBone.clear();
+    mSkinBones.clear(); mSkinW.clear(); mSkinLP.clear(); mSkinLN.clear();
     mShowSkin = false;
     mStatus = "Skin cleared";
 }
