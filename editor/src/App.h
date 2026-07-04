@@ -66,6 +66,9 @@ private:
 
     // imported skin mesh (raw, pre-placement) + adjustable fit so scale/offset can
     // be tweaked live without reloading the file
+    std::vector<V3> mSkinOrigPos, mSkinOrigNrm;  // exactly as loaded (never mutated)
+    V3 mSkinRotDeg{0,0,0};                        // user orientation fix (Euler XYZ, degrees)
+    void rebuildSkinFromOrig();                   // apply rotation -> raw, recompute auto-fit, place
     std::vector<V3> mSkinRawPos, mSkinRawNrm;
     float mSkinAutoScale = 1.0f;           // height-match scale computed at import
     V3 mSkinAutoMeshCtr{0,0,0}; float mSkinAutoMeshMinY = 0.0f;

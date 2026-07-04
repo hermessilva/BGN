@@ -950,13 +950,43 @@ void App::importSkinMesh() {
     }
     if (pos.empty()) { mStatus = "Mesh has no triangles/normals"; return; }
 
-    // mesh bbox
-    V3 mn = pos[0], mx = pos[0];
-    for (const auto& p : pos) {
+    mSkinOrigPos = std::move(pos);
+    mSkinOrigNrm = std::move(nrm);
+    mSkinRotDeg = V3{ 0,0,0 };
+    mSkinUserScale = 1.0f; mSkinUserOff = V3{ 0,0,0 };
+    rebuildSkinFromOrig();
+    mShowSkin = true; mShowMesh = false;
+    mStatus = "Skin imported: " + std::to_string(mSkinOrigPos.size() / 3) + " tris (use Rotate if lying down)";
+}
+
+// apply the user orientation fix to the original mesh, recompute the height-match
+// auto-fit against the skeleton, then place + bind.
+void App::rebuildSkinFromOrig() {
+    if (mSkinOrigPos.empty()) return;
+    // rotation matrix from Euler XYZ (degrees): R = Rz * Ry * Rx
+    const float d2r = 3.14159265358979323846f / 180.0f;
+    float cx = std::cos(mSkinRotDeg.x*d2r), sx = std::sin(mSkinRotDeg.x*d2r);
+    float cy = std::cos(mSkinRotDeg.y*d2r), sy = std::sin(mSkinRotDeg.y*d2r);
+    float cz = std::cos(mSkinRotDeg.z*d2r), sz = std::sin(mSkinRotDeg.z*d2r);
+    auto rot = [&](const V3& v) {
+        // Rx
+        V3 a{ v.x, cx*v.y - sx*v.z, sx*v.y + cx*v.z };
+        // Ry
+        V3 b{ cy*a.x + sy*a.z, a.y, -sy*a.x + cy*a.z };
+        // Rz
+        return V3{ cz*b.x - sz*b.y, sz*b.x + cz*b.y, b.z };
+    };
+    mSkinRawPos.resize(mSkinOrigPos.size());
+    mSkinRawNrm.resize(mSkinOrigNrm.size());
+    for (size_t i = 0; i < mSkinOrigPos.size(); i++) { mSkinRawPos[i] = rot(mSkinOrigPos[i]); mSkinRawNrm[i] = rot(mSkinOrigNrm[i]); }
+
+    // mesh bbox (after rotation)
+    V3 mn = mSkinRawPos[0], mx = mSkinRawPos[0];
+    for (const auto& p : mSkinRawPos) {
         mn.x = std::min(mn.x, p.x); mn.y = std::min(mn.y, p.y); mn.z = std::min(mn.z, p.z);
         mx.x = std::max(mx.x, p.x); mx.y = std::max(mx.y, p.y); mx.z = std::max(mx.z, p.z);
     }
-    // skeleton rest bbox (body translations expanded by half-extents)
+    // skeleton rest bbox
     V3 smn{ 1e30f,1e30f,1e30f }, smx{ -1e30f,-1e30f,-1e30f };
     for (int b = 0; b < (int)mModel.skeleton.size(); b++) {
         const Node& n = mModel.skeleton[b];
@@ -969,19 +999,12 @@ void App::importSkinMesh() {
     }
     float meshH = std::max(1e-4f, mx.y - mn.y);
     float skelH = std::max(1e-4f, smx.y - smn.y);
-
-    // keep the raw mesh + fit reference so scale/offset stay adjustable live
-    mSkinRawPos = std::move(pos);
-    mSkinRawNrm = std::move(nrm);
-    mSkinAutoScale = skelH / meshH;                          // match height (Y-up assumed)
+    mSkinAutoScale = skelH / meshH;
     mSkinAutoMeshCtr = V3{ (mn.x + mx.x) * 0.5f, 0, (mn.z + mx.z) * 0.5f };
     mSkinAutoMeshMinY = mn.y;
     mSkinAutoSkelCtr = V3{ (smn.x + smx.x) * 0.5f, 0, (smn.z + smx.z) * 0.5f };
     mSkinAutoSkelMinY = smn.y;
-    mSkinUserScale = 1.0f; mSkinUserOff = V3{ 0,0,0 };
     applySkinPlacement();
-    mShowSkin = true; mShowMesh = false;
-    mStatus = "Skin imported: " + std::to_string(mSkinRawPos.size() / 3) + " tris (Anatomy panel: scale/offset)";
 }
 
 // re-place the raw imported mesh using auto-fit * user scale + user offset, then bind
@@ -999,6 +1022,7 @@ void App::applySkinPlacement() {
 }
 
 void App::clearSkin() {
+    mSkinOrigPos.clear(); mSkinOrigNrm.clear();
     mSkinRawPos.clear(); mSkinRawNrm.clear();
     mSkinLocalPos.clear(); mSkinLocalNrm.clear(); mSkinBone.clear();
     mShowSkin = false;
@@ -1111,6 +1135,15 @@ void App::drawSkinControls() {
     }
     ImGui::SameLine();
     if (ImGui::Checkbox("Show", &mShowSkin)) {}
+    // orientation fix (GLB/FBX from generators are often Z-up or face a different way)
+    bool rot = false;
+    ImGui::TextUnformatted("Orient:"); ImGui::SameLine();
+    if (ImGui::Button("X+90")) { mSkinRotDeg.x += 90; rot = true; } ImGui::SameLine();
+    if (ImGui::Button("Y+90")) { mSkinRotDeg.y += 90; rot = true; } ImGui::SameLine();
+    if (ImGui::Button("Z+90")) { mSkinRotDeg.z += 90; rot = true; } ImGui::SameLine();
+    if (ImGui::Button("Rot 0")) { mSkinRotDeg = V3{0,0,0}; rot = true; }
+    if (ImGui::SliderFloat3("Rot (deg)", &mSkinRotDeg.x, -180.0f, 180.0f, "%.0f")) rot = true;
+    if (rot) rebuildSkinFromOrig();
     bool changed = false;
     changed |= ImGui::SliderFloat("Skin scale", &mSkinUserScale, 0.2f, 3.0f, "%.2fx");
     changed |= ImGui::SliderFloat("Offset X", &mSkinUserOff.x, -1.0f, 1.0f, "%.3f");
