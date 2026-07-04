@@ -4,6 +4,13 @@
 #include "Environment.h"
 #include "GLfunctions.h"
 #include "ShapeRenderer.h"
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>   // must precede GL headers so APIENTRY/WINGDIAPI are defined
+#endif
 #include <glad/glad.h>
 #include <GL/glu.h>
 #include <GLFW/glfw3.h>

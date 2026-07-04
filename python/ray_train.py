@@ -16,7 +16,10 @@ from ray.tune.registry import register_env
 from ray.rllib.utils.torch_ops import convert_to_torch_tensor
 import torch.nn.functional as F
 
-import pickle5 as pickle
+try:
+    import pickle5 as pickle
+except ImportError:
+    import pickle
 
 torch, nn = try_import_torch()
 

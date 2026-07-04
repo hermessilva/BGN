@@ -1,5 +1,16 @@
 # Bidirectional GaitNet 
 
+> **Fork notice.** This repository is a fork of
+> [**namjohn10/BidirectionalGaitNet**](https://github.com/namjohn10/BidirectionalGaitNet)
+> by **Jungnam Park, Moon Seok Park, Jehee Lee, and Jungdam Won** (SIGGRAPH 2023).
+> All original research, code, models and data are the work and property of the
+> original authors. This fork only adds a **native Windows (MSVC + vcpkg) port** —
+> see [`README-Windows.md`](README-Windows.md) and [`CHANGELOG.md`](CHANGELOG.md).
+> The upstream project ships **no explicit open-source license**; copyright therefore
+> remains with the original authors and this fork does not grant any additional
+> rights. Use for research/academic purposes and contact the authors
+> (jungnam04@imo.snu.ac.kr) for other uses. Please cite the paper below.
+
 This code is an implementation of Bidirectional GaitNet (SIGGRAPH 2023). It includes "Generative GaitNet (SIGGRAPH 2022)."
 
 ## Abstract 

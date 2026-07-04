@@ -414,8 +414,12 @@ BuildFromFile(const std::string &path, double defaultDamping, Eigen::Vector4d co
 
 		if (obj_file != "None")
 		{
-			std::string obj_path = fs::current_path().string() + "/../data/OBJ/" + obj_file;
-			const aiScene *scene = MeshShape::loadMesh(std::string(obj_path));
+			std::string obj_path = std::string(MASS_ROOT_DIR) + "/data/OBJ/" + obj_file;
+			// On Windows a bare path (e.g. "D:/...") is misparsed as a URI scheme,
+			// so load through the Uri overload with a local resource retriever.
+			const aiScene *scene = MeshShape::loadMesh(
+				dart::common::Uri::createFromPath(obj_path),
+				std::make_shared<dart::common::LocalResourceRetriever>());
 
 			MeshShapePtr visual_shape = std::shared_ptr<MeshShape>(new MeshShape(Eigen::Vector3d(0.01, 0.01, 0.01), scene));
 			visual_shape->setColorMode(MeshShape::ColorMode::SHAPE_COLOR);

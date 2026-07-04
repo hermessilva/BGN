@@ -1,7 +1,14 @@
 #include "GLfunctions.h"
 #include <assimp/cimport.h>
 #include <iostream>
-#include <GL/gl.h>
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>   // must precede GL headers so APIENTRY/WINGDIAPI are defined
+#endif
+#include <glad/glad.h>
 #include <GL/glu.h>
 #include "GL/glut.h"
 

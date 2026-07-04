@@ -1,23 +1,24 @@
-cmake_minimum_required(VERSION 3.5.1)
+cmake_minimum_required(VERSION 3.16)
 project(sim)
-
-
-add_compile_options(-Wdeprecated-declarations)
-
-SET(CMAKE_BUILD_TYPE Release CACHE STRING
-	"Choose the type of build, options are: None Debug Release RelWithDebInfo MinSizeRel.")
 
 set(LIBRARY_OUTPUT_PATH ${PROJECT_SOURCE_DIR})
 
-find_package(DART REQUIRED COMPONENTS collision-bullet  CONFIG)
-find_package(TinyXML2 REQUIRED)
-# find_package(PythonLibs REQUIRED)
-# find_package(pybind11 REQUIRED)
+find_package(DART REQUIRED COMPONENTS collision-bullet utils CONFIG)
+find_package(tinyxml2 CONFIG REQUIRED)
 
-include_directories(${PYTHON_INCLUDE_DIR})
-include_directories(${DART_INCLUDE_DIRS})
+# Character.h embeds a Python interpreter (pybind11::embed) to evaluate the
+# muscle / cascading networks, so the sim library needs Python + pybind11.
+set(PYBIND11_FINDPYTHON ON)
+find_package(pybind11 CONFIG REQUIRED)
 
 file(GLOB srcs "*.h" "*.cpp")
 
-add_library(sim ${srcs})
-target_link_libraries(sim ${DART_LIBRARIES} ${TinyXML_LIBRARIES})
+add_library(sim STATIC ${srcs})
+target_include_directories(sim PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(sim
+  PUBLIC
+    dart
+    dart-collision-bullet
+    dart-utils
+    tinyxml2::tinyxml2
+    pybind11::embed)

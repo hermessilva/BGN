@@ -3,7 +3,6 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #endif
 #include "stb_image_write.h"
-#include "dart/external/lodepng/lodepng.h"
 const std::vector<std::string> CHANNELS =
     {
         "Xposition",
@@ -337,7 +336,7 @@ void GLFWApp::startLoop()
             std::vector<unsigned char> flipped_pixels(stride * height);
             for (int y = 0; y < height; ++y)
                 memcpy(&flipped_pixels[y * stride], &pixels[(height - y - 1) * stride], stride);
-            lodepng::encode(("../screenshots/screenshot" + std::to_string(mScreenIdx) + ".png").c_str(), flipped_pixels.data(), width, height);
+            stbi_write_png(("../screenshots/screenshot" + std::to_string(mScreenIdx) + ".png").c_str(), width, height, 4, flipped_pixels.data(), stride);
             std::cout << "Saving screenshot" << mScreenIdx << ".png ...... " << std::endl;
             delete[] pixels;
             mScreenIdx++;
@@ -452,29 +451,32 @@ void GLFWApp::setEnv(Environment *env, std::string metadata)
     // Forward GaitNet
     std::string path = "../fgn";
     mFGNList.clear();
-    for (const auto &entry : fs::directory_iterator(path))
-    {
-        std::string fgn_path = entry.path().string();
-        mFGNList.push_back(fgn_path);
-    }
+    if (fs::exists(path))
+        for (const auto &entry : fs::directory_iterator(path))
+        {
+            std::string fgn_path = entry.path().string();
+            mFGNList.push_back(fgn_path);
+        }
 
     // Backward GaitNet
     path = "../bgn";
     mBGNList.clear();
-    for (const auto &entry : fs::directory_iterator(path))
-    {
-        std::string bgn_path = entry.path().string();
-        mBGNList.push_back(bgn_path);
-    }
+    if (fs::exists(path))
+        for (const auto &entry : fs::directory_iterator(path))
+        {
+            std::string bgn_path = entry.path().string();
+            mBGNList.push_back(bgn_path);
+        }
 
     // C3D List
     path = "../c3d";
     mC3DList.clear();
-    for (const auto &entry : fs::directory_iterator(path))
-    {
-        std::string c3d_path = entry.path().string();
-        mC3DList.push_back(c3d_path);
-    }
+    if (fs::exists(path))
+        for (const auto &entry : fs::directory_iterator(path))
+        {
+            std::string c3d_path = entry.path().string();
+            mC3DList.push_back(c3d_path);
+        }
 
     // Set For BVH
     for (auto jn : mEnv->getCharacter(0)->getSkeleton()->getJoints())
@@ -499,8 +501,10 @@ void GLFWApp::setEnv(Environment *env, std::string metadata)
     // get list of files in the specific directory path
     mMotions.clear();
     std::string motion_path = "../motions";
-    py::object load_motions_from_file = py::module::import("forward_gaitnet").attr("load_motions_from_file");
     mMotionIdx = 0;
+    if (fs::exists(motion_path))
+    {
+    py::object load_motions_from_file = py::module::import("forward_gaitnet").attr("load_motions_from_file");
     for (const auto &entry : fs::directory_iterator(motion_path))
     {
         std::string file_name = entry.path().string();
@@ -521,6 +525,7 @@ void GLFWApp::setEnv(Environment *env, std::string metadata)
             motion_elem.motion = motions.row(i);
             mMotions.push_back(motion_elem);
         }
+    }
     }
 }
 

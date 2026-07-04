@@ -2,13 +2,15 @@ import time
 from pathlib import Path
 from typing import List, Dict
 import torch.optim as optim
-from symbol import parameters
 from forward_gaitnet import RefNN
 import argparse
-import pickle5 as pickle
+try:
+    import pickle5 as pickle
+except ImportError:
+    import pickle
 import torch.nn.utils as torch_utils
 from pysim import RayEnvManager
-from ray.rllib.utils.torch_ops import convert_to_torch_tensor
+from ray_model import convert_to_torch_tensor  # ray-optional shim
 import numpy as np
 import torch
 import torch.nn as nn

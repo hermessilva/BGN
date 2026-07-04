@@ -1,15 +1,16 @@
-from ray.rllib.utils.torch_ops import convert_to_torch_tensor
-import pandas as pd
-import matplotlib.pyplot as plt
-import umap.plot
-import umap
+from ray_model import convert_to_torch_tensor  # ray-optional shim
+# pandas / matplotlib / umap are only needed for the sampling() UMAP plot; import
+# them lazily so training does not require the heavy visualization stack.
 import numpy as np
 import math
 import torch
 from typing import List, Callable, Union, Any, TypeVar, Tuple
 from torch import nn
 from torch.nn import functional as F
-import pickle5 as pickle
+try:
+    import pickle5 as pickle
+except ImportError:
+    import pickle
 
 Tensor = TypeVar('torch.tensor')
 
@@ -206,6 +207,8 @@ class AdvancedVAE(nn.Module):
 
     # Sampling 1000 times and draw umap plot
     def sampling(self, motion, truth):
+        import umap
+        import matplotlib.pyplot as plt
 
         motion = torch.tensor([motion], device="cuda")
         mu, log_var = self.encode(motion)

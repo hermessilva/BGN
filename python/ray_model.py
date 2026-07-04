@@ -1,13 +1,48 @@
-from IPython import embed
 from math import fabs
 import torch
 import torch.nn as nn
 import numpy as np
-import pickle5 as pickle
-
-from ray.rllib.models.torch.torch_modelv2 import TorchModelV2
-from ray.rllib.utils.torch_ops import convert_to_torch_tensor
 import torch.nn.functional as F
+
+# pickle5 was a Python 3.6/3.7 backport of protocol-5 pickling; on 3.8+ the
+# stdlib pickle already supports it.
+try:
+    import pickle5 as pickle
+except ImportError:
+    import pickle
+
+# ray/rllib is only needed for training and for un-pickling ray checkpoints.
+# The embedded C++ interpreter and the viewer only use the plain torch network
+# classes, so keep ray optional: fall back to lightweight stand-ins when it is
+# not installed (e.g. Python 3.10 without ray 1.8).
+try:
+    from ray.rllib.models.torch.torch_modelv2 import TorchModelV2
+    from ray.rllib.utils.torch_ops import convert_to_torch_tensor
+    HAS_RAY = True
+except ImportError:
+    HAS_RAY = False
+
+    class TorchModelV2(object):
+        """Minimal stand-in so the network classes stay importable without ray."""
+        def __init__(self, obs_space, action_space, num_outputs, model_config, name, **kwargs):
+            self.obs_space = obs_space
+            self.action_space = action_space
+            self.num_outputs = num_outputs
+            self.model_config = model_config
+            self.name = name
+
+    def convert_to_torch_tensor(x, device=None):
+        """Recursively turn numpy arrays / nested containers into torch tensors."""
+        if isinstance(x, dict):
+            return {k: convert_to_torch_tensor(v, device) for k, v in x.items()}
+        if isinstance(x, (list, tuple)):
+            return type(x)(convert_to_torch_tensor(v, device) for v in x)
+        if isinstance(x, np.ndarray):
+            t = torch.from_numpy(x)
+            return t.to(device) if device is not None else t
+        if isinstance(x, torch.Tensor):
+            return x.to(device) if device is not None else x
+        return x
 
 MultiVariateNormal = torch.distributions.Normal
 temp = MultiVariateNormal.log_prob

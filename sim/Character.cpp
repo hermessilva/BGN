@@ -314,7 +314,7 @@ void Character::
         if (mActuactorType == mus)
             mActivationLogs.push_back(mActivations);
         else
-            mActivationLogs.push_back(dart::math::clip(mActivations, Eigen::VectorXd::Zero(mActivations.rows()), Eigen::VectorXd::Ones(mActivations.rows())));
+            mActivationLogs.push_back(mActivations.cwiseMax(0.0).cwiseMin(1.0));
         Eigen::VectorXd muscleTorque = mSkeleton->getExternalForces();
         for (int i = 0; i < mMuscles.size(); i++)
         {

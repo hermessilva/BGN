@@ -1,38 +1,40 @@
-cmake_minimum_required(VERSION 3.5.1)
-project(mysim)
+cmake_minimum_required(VERSION 3.16)
+project(gaitnet)
+
 set(OpenGL_GL_PREFERENCE LEGACY)
 set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "Release" CACHE STRING
-      "Choose the type of build, options are: Debug Release
-RelWithDebInfo MinSizeRel."
+      "Choose the type of build, options are: Debug Release RelWithDebInfo MinSizeRel."
       FORCE)
 endif(NOT CMAKE_BUILD_TYPE)
 
-link_libraries(stdc++fs)
+if(NOT MSVC)
+  link_libraries(stdc++fs)
+  add_compile_options(-fPIC)
+  add_compile_options(-Wdeprecated-declarations)
+  add_compile_options(-DHAVE_CSTDDEF)
+else()
+  # MSVC: disable min/max macros, enable M_PI and lax preprocessor for DART headers
+  add_compile_definitions(NOMINMAX _USE_MATH_DEFINES _CRT_SECURE_NO_WARNINGS)
+  add_compile_options(/bigobj /permissive-)
+endif()
 
-add_compile_options(-fPIC)
-# add_compile_options(-std=gnu++11)
-add_compile_options(-Wdeprecated-declarations)
-
-add_compile_options(-DHAVE_CSTDDEF)
-
-add_definitions(-DMASS_ROOT_DIR="..")
+add_definitions(-DMASS_ROOT_DIR="${CMAKE_HOME_DIRECTORY}")
 set(CMAKE_MODULE_PATH "${CMAKE_HOME_DIRECTORY}/cmake")
 
-# if(SERVER_BUILD)
-find_package(PythonLibs 3.6 EXACT REQUIRED)
-find_package(PythonInterp 3.6 EXACT REQUIRED)
-# endif()
-
-
-if(NOT SERVER_BUILD)
-find_package(PythonLibs REQUIRED)
-find_package(PythonInterp REQUIRED)
+# Build the OpenGL/ImGui viewer (needs a display). Off for headless/server builds.
+option(GAITNET_BUILD_VIEWER "Build the GLFW/ImGui viewer" ON)
+if(SERVER_BUILD)
+  set(GAITNET_BUILD_VIEWER OFF)
 endif()
-add_subdirectory( libs )
+
 add_subdirectory( sim )
 add_subdirectory( python )
-if(NOT SERVER_BUILD)
-add_subdirectory( viewer )
+if(GAITNET_BUILD_VIEWER)
+  add_subdirectory( libs )
+  add_subdirectory( viewer )
 endif()

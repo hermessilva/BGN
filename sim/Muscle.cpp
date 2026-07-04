@@ -1,5 +1,8 @@
 #include "Muscle.h"
 
+#include <numeric>
+#include <algorithm>
+
 using namespace dart::dynamics;
 std::vector<int> sort_indices(const std::vector<double> &val)
 {

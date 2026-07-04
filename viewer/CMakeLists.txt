@@ -1,30 +1,38 @@
-cmake_minimum_required(VERSION 3.5.1)
+cmake_minimum_required(VERSION 3.16)
 project(mysim)
 
-add_compile_options(-fvisibility=hidden)
+if(NOT MSVC)
+  add_compile_options(-fvisibility=hidden)
+endif()
 
-link_directories(../sim/)
 include_directories(../sim/)
 
-find_package(DART REQUIRED COMPONENTS gui collision-bullet  CONFIG)
+find_package(DART REQUIRED COMPONENTS gui collision-bullet utils CONFIG)
 find_package(OpenGL REQUIRED)
-find_package(GLUT REQUIRED)
-find_package(PythonLibs REQUIRED)
+find_package(glfw3 CONFIG REQUIRED)
+find_package(FreeGLUT CONFIG REQUIRED)     # only for glutBitmapCharacter text
+find_package(assimp CONFIG REQUIRED)
 
-# find_package(Boost 1.66.0 COMPONENTS filesystem python3 numpy3)
+set(PYBIND11_FINDPYTHON ON)
+find_package(pybind11 CONFIG REQUIRED)
 
-find_package(pybind11 REQUIRED)
+file(GLOB srcs "*.h" "*.cpp")
 
-include_directories(${DART_INCLUDE_DIRS})
-include_directories(${OPENGL_INCLUDE_DIR})
-include_directories(${GLUT_INCLUDE_DIR})
-include_directories(${PYTHON_INCLUDE_DIR})
+add_executable(viewer ${srcs})
+target_link_libraries(viewer
+  PRIVATE
+    sim
+    imgui
+    glad
+    glfw
+    dart
+    dart-gui
+    dart-collision-bullet
+    dart-utils
+    assimp::assimp
+    OpenGL::GL
+    OpenGL::GLU
+    FreeGLUT::freeglut
+    pybind11::embed)
 
-# file(GLOB srcs "GLfunctions.h" "GLfunctions.cpp" "GLFWApp.h" "GLFWApp.cpp" "ShapeRenderer.h" "ShapeRenderer.cpp" "InverseGaitNet.h" "InverseGaitNet.cpp" "stb_image_write.h") 
-file(GLOB srcs "*.h" "*.cpp") 
-
-add_executable(viewer "main.cpp" ${srcs})
-target_link_libraries(viewer ${DART_LIBRARIES} ${PYTHON_LIBRARIES} GL GLU glut glad pybind11::embed glfw imgui sim)
-
-# add_executable(collector "collector.cpp" ${srcs})
-# target_link_libraries(collector ${DART_LIBRARIES} ${PYTHON_LIBRARIES} GL GLU glut glad pybind11::embed glfw imgui sim)
+set_target_properties(viewer PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/viewer)

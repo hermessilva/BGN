@@ -3,6 +3,23 @@ build_debug/
 *.so
 *.a
 
+# Windows / MSVC build artifacts
+*.pyd
+*.dll
+*.lib
+*.exp
+*.pdb
+*.ilk
+*.obj
+*.exe
+.vs/
+x64/
+[Rr]elease/
+[Dd]ebug/
+sim/Release/
+python/Release/
+viewer_windows_smoke.png
+
 legacy_data/
 
 nn/
