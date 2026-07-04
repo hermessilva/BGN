@@ -105,3 +105,6 @@ previous_rollout/*
 
 *.c3d
 editor_skin_mcp*.png
+
+# keep the demo project (bound bee skin)
+!data/bee_fairy.mass
