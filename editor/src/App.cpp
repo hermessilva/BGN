@@ -969,21 +969,56 @@ void App::importSkinMesh() {
     }
     float meshH = std::max(1e-4f, mx.y - mn.y);
     float skelH = std::max(1e-4f, smx.y - smn.y);
-    float s = (skelH / meshH) * mSkinImportScale;              // match height (Y-up assumed)
-    V3 meshCtr{ (mn.x + mx.x) * 0.5f, 0, (mn.z + mx.z) * 0.5f };
-    V3 skelCtr{ (smn.x + smx.x) * 0.5f, 0, (smn.z + smx.z) * 0.5f };
-    for (size_t i = 0; i < pos.size(); i++) {
-        V3& p = pos[i];
-        p.x = (p.x - meshCtr.x) * s + skelCtr.x;               // center X/Z
-        p.z = (p.z - meshCtr.z) * s + skelCtr.z;
-        p.y = (p.y - mn.y) * s + smn.y;                        // align feet to skeleton bottom
-        // normals only need the (uniform) scale sign -> leave direction, renormalize in bind
-    }
 
-    bindSkin(pos, nrm);
+    // keep the raw mesh + fit reference so scale/offset stay adjustable live
+    mSkinRawPos = std::move(pos);
+    mSkinRawNrm = std::move(nrm);
+    mSkinAutoScale = skelH / meshH;                          // match height (Y-up assumed)
+    mSkinAutoMeshCtr = V3{ (mn.x + mx.x) * 0.5f, 0, (mn.z + mx.z) * 0.5f };
+    mSkinAutoMeshMinY = mn.y;
+    mSkinAutoSkelCtr = V3{ (smn.x + smx.x) * 0.5f, 0, (smn.z + smx.z) * 0.5f };
+    mSkinAutoSkelMinY = smn.y;
+    mSkinUserScale = 1.0f; mSkinUserOff = V3{ 0,0,0 };
+    applySkinPlacement();
     mShowSkin = true; mShowMesh = false;
-    mStatus = "Skin imported: " + std::to_string(pos.size() / 3) + " tris (scaled x" +
-              std::to_string(s) + ")";
+    mStatus = "Skin imported: " + std::to_string(mSkinRawPos.size() / 3) + " tris (Anatomy panel: scale/offset)";
+}
+
+// re-place the raw imported mesh using auto-fit * user scale + user offset, then bind
+void App::applySkinPlacement() {
+    if (mSkinRawPos.empty()) return;
+    float s = mSkinAutoScale * std::max(0.01f, mSkinUserScale);
+    std::vector<V3> pos(mSkinRawPos.size());
+    for (size_t i = 0; i < mSkinRawPos.size(); i++) {
+        const V3& r = mSkinRawPos[i];
+        pos[i].x = (r.x - mSkinAutoMeshCtr.x) * s + mSkinAutoSkelCtr.x + mSkinUserOff.x;
+        pos[i].z = (r.z - mSkinAutoMeshCtr.z) * s + mSkinAutoSkelCtr.z + mSkinUserOff.z;
+        pos[i].y = (r.y - mSkinAutoMeshMinY) * s + mSkinAutoSkelMinY + mSkinUserOff.y;
+    }
+    bindSkin(pos, mSkinRawNrm);   // normals re-normalized inside the bind
+}
+
+void App::clearSkin() {
+    mSkinRawPos.clear(); mSkinRawNrm.clear();
+    mSkinLocalPos.clear(); mSkinLocalNrm.clear(); mSkinBone.clear();
+    mShowSkin = false;
+    mStatus = "Skin cleared";
+}
+
+// scale / offset sliders for the imported skin (Anatomy panel)
+void App::drawSkinControls() {
+    if (mSkinRawPos.empty()) return;
+    ImGui::SeparatorText("Imported skin");
+    bool changed = false;
+    changed |= ImGui::SliderFloat("Skin scale", &mSkinUserScale, 0.2f, 3.0f, "%.2fx");
+    changed |= ImGui::SliderFloat("Offset X", &mSkinUserOff.x, -1.0f, 1.0f, "%.3f");
+    changed |= ImGui::SliderFloat("Offset Y", &mSkinUserOff.y, -1.0f, 1.0f, "%.3f");
+    changed |= ImGui::SliderFloat("Offset Z", &mSkinUserOff.z, -1.0f, 1.0f, "%.3f");
+    if (ImGui::Button("Reset fit")) { mSkinUserScale = 1.0f; mSkinUserOff = V3{0,0,0}; changed = true; }
+    ImGui::SameLine();
+    if (ImGui::Button("Clear skin")) { clearSkin(); return; }
+    if (changed) applySkinPlacement();
+    ImGui::TextDisabled("%zu tris  |  auto x%.2f", mSkinRawPos.size()/3, mSkinAutoScale);
 }
 void App::applyAtlas(const AtlasEntry& a) {
     if (Muscle* mu = selMuscle()) {

@@ -178,6 +178,7 @@ void App::drawToolbar() {
         bool dirty = (mSimSigApplied != mSimSigPending);
         ImGui::Text("t = %.2fs  |  %s%s", mSim.simTime(), mSim.status().c_str(), dirty ? "  (edits pending)" : "");
     }
+    drawSkinControls();
     ImGui::End();
 }
 

@@ -64,6 +64,18 @@ private:
     void updateSkinPose();   // rebuild live skin verts from current body transforms
     void bindSkin(const std::vector<V3>& pos, const std::vector<V3>& nrm); // bind + upload
 
+    // imported skin mesh (raw, pre-placement) + adjustable fit so scale/offset can
+    // be tweaked live without reloading the file
+    std::vector<V3> mSkinRawPos, mSkinRawNrm;
+    float mSkinAutoScale = 1.0f;           // height-match scale computed at import
+    V3 mSkinAutoMeshCtr{0,0,0}; float mSkinAutoMeshMinY = 0.0f;
+    V3 mSkinAutoSkelCtr{0,0,0}; float mSkinAutoSkelMinY = 0.0f;
+    float mSkinUserScale = 1.0f;           // user multiplier on the auto scale
+    V3 mSkinUserOff{0,0,0};                // user world offset (m)
+    void applySkinPlacement();             // re-place raw mesh -> bindSkin
+    void clearSkin();
+    void drawSkinControls();               // scale/offset sliders
+
     // fills (generated skin/tissue envelopes), async generation with progress
     std::atomic<float> mFillProgress{0.0f};
     std::atomic<bool>  mFillDone{false};
