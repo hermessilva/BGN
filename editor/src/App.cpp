@@ -301,7 +301,10 @@ void App::updateSkinPose() {
         }
         pos[i] = p; nrm[i] = normalize(n);
     }
-    mRen.setSkinMesh(pos, nrm);
+    if (mSkinTextured && !mSkinIdx.empty())
+        mRen.setRiggedMesh(pos, nrm, mSkinUV, mSkinIdx);  // textured (rigged char skin)
+    else
+        mRen.setSkinMesh(pos, nrm);
 }
 
 void App::seedLightsIfEmpty() {
@@ -726,7 +729,10 @@ void App::drawScene() {
     if (mShowSkin && !mSkinBones.empty()) {
         updateSkinPose();                           // deform to the live pose each frame
         M4 ident;
-        mRen.drawSkin(ident, V3{0.86f, 0.66f, 0.56f});
+        if (mSkinTextured && !mSkinIdx.empty())
+            mRen.drawRigged(ident, mSkinTex, mSkinUseTex, mSkinColor);
+        else
+            mRen.drawSkin(ident, V3{0.86f, 0.66f, 0.56f});
     }
 
     // rigged FBX character playing its own clip (CPU linear-blend skinning)
@@ -1019,6 +1025,11 @@ void App::importSkinMesh() {
 // produced by the MCP bind_skin tool. Called after opening a project.
 void App::loadSkinFromModel() {
     if (!mModel.skin.present || mModel.skin.obj.empty()) return;
+    if (mModel.skin.rigged) {           // rigged char re-skinned onto the MASS bodies
+        loadRiggedFbx(mModel.skin.obj);
+        if (mRigged.loaded()) bindRiggedToSkeleton();
+        return;
+    }
     mSkinRotDeg   = V3{ (float)mModel.skin.rotDeg[0], (float)mModel.skin.rotDeg[1], (float)mModel.skin.rotDeg[2] };
     mSkinUserScale = (float)mModel.skin.userScale;
     mSkinUserOff  = V3{ (float)mModel.skin.offset[0], (float)mModel.skin.offset[1], (float)mModel.skin.offset[2] };
@@ -1092,6 +1103,7 @@ void App::clearSkin() {
     mSkinOrigPos.clear(); mSkinOrigNrm.clear();
     mSkinRawPos.clear(); mSkinRawNrm.clear();
     mSkinBones.clear(); mSkinW.clear(); mSkinLP.clear(); mSkinLN.clear();
+    mSkinTextured = false; mSkinUV.clear(); mSkinIdx.clear();
     mShowSkin = false;
     mStatus = "Skin cleared";
 }
@@ -1203,6 +1215,7 @@ void App::rebindSkin() {
 void App::loadRiggedFbx(const std::string& path) {
     std::string err;
     if (!mRigged.load(path, &err)) { mStatus = "rigged load failed: " + err; return; }
+    mSkinObjPath = path;   // remembered for the rigged-skin .mass descriptor
     mRigTex = mRigged.texRGBA.empty() ? 0 : mRen.uploadTexture(mRigged.texW, mRigged.texH, mRigged.texRGBA.data());
     // fit the bind-pose bbox to the skeleton (scale to height, center feet)
     V3 mn = mRigged.basePos[0], mx = mn;
@@ -1230,6 +1243,51 @@ void App::loadRiggedFbx(const std::string& path) {
 }
 
 void App::loadRiggedCharacter(const std::string& path) { loadRiggedFbx(path); }
+void App::driveRiggedBySim() { bindRiggedToSkeleton(); }
+
+// "Swap the skeleton": drop the char's own (Mixamo) rig and bind its textured mesh
+// onto the MASS bodies, so the physics/muscle sim drives it (not the baked clip).
+// Reuses the LBS skin pipeline; UV/indices/texture are kept for a textured render.
+void App::bindRiggedToSkeleton() {
+    if (!mRigged.loaded()) { mStatus = "Load a rigged character first"; return; }
+    if (mModel.skeleton.empty()) { mStatus = "Load a MASS model first"; return; }
+    // place the bind-pose mesh into skeleton space (same transform used for the clip)
+    std::vector<V3> pos(mRigged.basePos.size()), nrm(mRigged.baseNrm.size());
+    for (size_t i = 0; i < pos.size(); i++) {
+        pos[i] = mulPoint(mRigPlacement, mRigged.basePos[i]);
+        nrm[i] = normalize(mulDir(mRigPlacement, mRigged.baseNrm[i]));
+    }
+    bindSkin(pos, nrm);              // -> mSkinBones/W/LP/LN, mShowSkin = true
+    mSkinTextured = true;
+    mSkinUV  = mRigged.uv;
+    mSkinIdx = mRigged.indices;
+    mSkinTex = mRigTex;
+    mShowRigged = false;             // stop drawing the baked clip; sim drives the skin now
+    mHideRig = true;                 // char-only view (bones/muscles hidden; toggle "Hide rig")
+    // record it in the model so a saved .mass restores this on open
+    mModel.skin = Skin{};
+    mModel.skin.obj = mSkinObjPath;
+    mModel.skin.rigged = true;
+    mModel.skin.present = true;
+    updateSkinPose();
+    mStatus = "Rigged char bound to MASS skeleton (" + std::to_string(pos.size()) +
+              " verts) — driven by the sim; press Simulate";
+}
+
+// Generate a fresh .mass beside the current project carrying the rigged-skin setup.
+void App::saveRiggedMass() {
+    std::string base = mProjectPath.empty() ? (mDataRoot + "/rigged.mass")
+                                            : (dirOf(mProjectPath) + "/rigged.mass");
+    generateRiggedMass(base);
+}
+
+void App::generateRiggedMass(const std::string& out) {
+    if (!mModel.skin.rigged) bindRiggedToSkeleton();
+    if (!mModel.skin.rigged) return;                 // bind failed (no char/skeleton)
+    std::string err;
+    if (mModel.SaveMass(out, &err)) { mProjectPath = out; mStatus = "Saved new .mass: " + out; }
+    else mStatus = "Save failed: " + err;
+}
 
 void App::importRiggedDialog() {
     std::string p = openFileDialog("Rigged character (fbx/glb/gltf)\0*.fbx;*.glb;*.gltf;*.dae\0All\0*.*\0");
@@ -1249,6 +1307,18 @@ void App::drawRiggedControls() {
         if (ImGui::SliderFloat("Time", &t, 0.0f, dur, "%.2fs")) { mRigTime = t; mRigPlay = false; } }
     ImGui::TextDisabled("%zu verts  %zu bones  %.1fs clip%s", mRigged.basePos.size(),
                         mRigged.bones.size(), mRigged.animSeconds(), mRigTex?"  (textured)":"  (no tex)");
+    ImGui::Spacing();
+    ImGui::SeparatorText("Drive by MASS sim");
+    if (ImGui::Button("Bind to MASS skeleton")) bindRiggedToSkeleton();
+    ImGui::SameLine();
+    if (ImGui::Button("Generate .mass")) saveRiggedMass();
+    if (mSkinTextured) {
+        ImGui::TextDisabled("bound: sim drives the char (own rig dropped)");
+        ImGui::Checkbox("Texture##skin", &mSkinUseTex);
+        ImGui::ColorEdit3("Color/tint##skin", &mSkinColor.x);
+    } else {
+        ImGui::TextDisabled("drops the Mixamo rig; the walk sim deforms the char");
+    }
 }
 
 // Resize the SELECTED bone's box to the local skin mesh (verts nearest to it),

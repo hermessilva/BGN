@@ -108,3 +108,5 @@ editor_skin_mcp*.png
 
 # keep the demo project (bound bee skin)
 !data/bee_fairy.mass
+# rigged char re-skinned onto the MASS bodies, driven by the sim
+!data/bee_rigged.mass

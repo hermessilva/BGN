@@ -39,6 +39,8 @@ public:
     void startKinematicSim();                        // start live BVH playback (public trigger)
     void beginFill(const std::string& name);         // start a fill generation (public trigger)
     void loadRiggedCharacter(const std::string& path); // load a rigged FBX/GLB (public trigger)
+    void driveRiggedBySim();                            // drop char rig, bind to MASS bodies (public trigger)
+    void generateRiggedMass(const std::string& out);    // bind + write a rigged-skin .mass (public trigger)
 
 private:
     GLFWwindow* mWin = nullptr;
@@ -69,6 +71,18 @@ private:
     std::vector<std::array<V3, SKIN_K>> mSkinLP, mSkinLN; // rest-local pos/nrm per bone
     void updateSkinPose();   // rebuild live skin verts from current body transforms
     void bindSkin(const std::vector<V3>& pos, const std::vector<V3>& nrm); // bind + upload
+    // textured skin (rigged char re-skinned onto MASS bodies): UV/indices/texture are
+    // static; only the vertex pos/nrm follow the sim pose. When set, the skin renders
+    // via the textured path instead of the flat one.
+    bool mSkinTextured = false;
+    std::vector<float> mSkinUV;
+    std::vector<unsigned> mSkinIdx;
+    unsigned mSkinTex = 0;
+    bool mSkinUseTex = true;
+    V3 mSkinColor{1.0f, 1.0f, 1.0f};
+    void bindRiggedToSkeleton();   // drop the char's own skeleton; bind its mesh to the
+                                   // MASS bodies so the sim drives it (textured)
+    void saveRiggedMass();         // write a new .mass carrying the rigged-skin descriptor
 
     // imported skin mesh (raw, pre-placement) + adjustable fit so scale/offset can
     // be tweaked live without reloading the file

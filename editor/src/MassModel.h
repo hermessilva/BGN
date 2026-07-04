@@ -114,6 +114,8 @@ struct Skin {
     double userScale = 1.0;
     Vec3 offset{0,0,0};
     bool present = false;
+    bool rigged = false;   // obj is an artist-rigged char: re-skinned onto the MASS
+                           // bodies (its own skeleton dropped) and driven by the sim
 };
 
 // ---- GaitNet env.xml configuration (the master file of this project) ----

@@ -146,7 +146,8 @@ static json toJson(const Model& m) {
     };
     if (m.skin.present) {
         root["skin"] = { {"obj", m.skin.obj}, {"rotDeg", j(m.skin.rotDeg)},
-                         {"userScale", m.skin.userScale}, {"offset", j(m.skin.offset)} };
+                         {"userScale", m.skin.userScale}, {"offset", j(m.skin.offset)},
+                         {"rigged", m.skin.rigged} };
     }
     return root;
 }
@@ -314,6 +315,7 @@ static Model fromJson(const json& root) {
         if (s.contains("rotDeg")) m.skin.rotDeg = v3(s["rotDeg"]);
         m.skin.userScale = s.value("userScale", 1.0);
         if (s.contains("offset")) m.skin.offset = v3(s["offset"]);
+        m.skin.rigged = s.value("rigged", false);
         m.skin.present = !m.skin.obj.empty();
     }
     return m;

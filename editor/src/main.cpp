@@ -158,6 +158,8 @@ int main(int argc, char** argv) {
         else if (a == "--sim") app.startKinematicSim();
         else if (a == "--genfill") app.beginFill("default");
         else if (a == "--rig" && i + 1 < argc) app.loadRiggedCharacter(argv[++i]);
+        else if (a == "--rigbind") app.driveRiggedBySim();
+        else if (a == "--savemass" && i + 1 < argc) app.generateRiggedMass(argv[++i]);
     }
     if (genSkin) app.generateSkin();
 
