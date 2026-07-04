@@ -37,3 +37,12 @@ if(GAITNET_BUILD_VIEWER)
   add_subdirectory( libs )
   add_subdirectory( viewer )
 endif()
+
+# Arena-style visual character editor (GaitNet formats). Needs a display.
+option(GAITNET_BUILD_EDITOR "Build the visual character editor" ON)
+if(SERVER_BUILD)
+  set(GAITNET_BUILD_EDITOR OFF)
+endif()
+if(GAITNET_BUILD_EDITOR)
+  add_subdirectory( editor )
+endif()

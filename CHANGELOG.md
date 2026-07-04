@@ -7,6 +7,40 @@ authors (Jungnam Park, Moon Seok Park, Jehee Lee, Jungdam Won).
 
 The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased] — Visual character editor (`editor/`)
+
+Added a standalone Arena-style 3D character editor that edits this project's native
+formats. It is self-contained: it links this repo's `sim` library and vcpkg
+packages only — there is no source/link dependency on the sibling MASS project
+(the editor is adapted from MASS-Easy's "Arena" editor, re-targeted to the
+BidirectionalGaitNet `env.xml` format).
+
+### Added
+- `editor/` — GLFW + Dear ImGui (docking) + ImGuizmo + OpenGL editor (binary
+  `editor.exe`). Namespace `ed`. `scripts/editor.ps1` launches it.
+- 3D viewport: bones from the model's OBJ meshes, 304 muscles as fusiform tubes,
+  ImGuizmo move/rotate/scale, mesh picking, undo/redo, scene tree + properties.
+- **Unified `.mass` JSON project** grouping skeleton + muscles + motions + the
+  `env.xml` settings + the `<parameter>` block + scene lights/fills. Import a
+  project from `env.xml` (File ▸ Import env.xml) and export back to
+  `env.xml` + `skeleton_gaitnet_narrow_model.xml` + `muscle_gaitnet.xml`.
+- **GaitNet panel**: edits the `env.xml` master config (actuator, defaultKp/Kv,
+  Hz, actionScale, reward type/weights, flags) and the `<parameter>` ranges
+  (gait / skeleton / torsion / muscle_length / muscle_force) with add/remove.
+- **Live simulation** on this repo's `sim::Environment` (a worker thread writes a
+  temp `env.xml` + skeleton + muscle, calls `Environment::initialize`, then plays
+  the reference motion (kinematic) or steps the DART sim (dynamic)).
+- Extras carried over from Arena: procedural skin/fills (metaballs + marching
+  cubes), OpenSim `.osim` muscle atlas import, Boost.Asio training-telemetry bridge.
+
+### Format work
+- `Model` extended for GaitNet: per-joint `kp`/`kv` (Ball 3-vector / Revolute
+  scalar), full `EnvConfig`, and the `<parameter>` block — all round-trip through
+  the `.mass` JSON and the native xml (verified: 23 nodes, 304 muscles,
+  kp/kv preserved, env.xml faithfully reproduced).
+- Bootstrap rewritten from the MASS `metadata.txt` triplet to this project's
+  `env.xml` using `tinyxml2` (the sim library's XML dep) instead of `tinyxml`.
+
 ## [Unreleased] — Python-free inference (pure C++/Eigen)
 
 Removed the runtime dependency on Python/PyTorch entirely. The simulation and the

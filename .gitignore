@@ -20,6 +20,12 @@ sim/Release/
 python/Release/
 viewer_windows_smoke.png
 viewer_nopython.png
+editor_smoke.png
+editor_gaitnet.png
+editor/Release/
+editor/Debug/
+*.mass
+editor_tmp/
 
 legacy_data/
 
