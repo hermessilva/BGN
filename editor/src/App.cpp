@@ -1005,10 +1005,16 @@ void App::clearSkin() {
     mStatus = "Skin cleared";
 }
 
-// scale / offset sliders for the imported skin (Anatomy panel)
+// import button + scale/offset sliders for the imported skin (Tools panel)
 void App::drawSkinControls() {
-    if (mSkinRawPos.empty()) return;
-    ImGui::SeparatorText("Imported skin");
+    ImGui::SeparatorText("Skin (imported mesh)");
+    if (ImGui::Button("Import mesh as skin...")) importSkinMesh();
+    if (mSkinRawPos.empty()) {
+        ImGui::TextDisabled("obj / glb / fbx / stl / 3mf");
+        return;
+    }
+    ImGui::SameLine();
+    if (ImGui::Checkbox("Show", &mShowSkin)) {}
     bool changed = false;
     changed |= ImGui::SliderFloat("Skin scale", &mSkinUserScale, 0.2f, 3.0f, "%.2fx");
     changed |= ImGui::SliderFloat("Offset X", &mSkinUserOff.x, -1.0f, 1.0f, "%.3f");
