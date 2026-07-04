@@ -66,8 +66,10 @@ static void addNode(RiggedMesh& rm, const aiNode* an, int parent) {
 
 bool RiggedMesh::load(const std::string& path, std::string* err) {
     Assimp::Importer imp;
+    // NOTE: no JoinIdenticalVertices (it can collapse UV/weight seams) and FlipUVs
+    // for the FBX/GL texture-origin convention.
     const aiScene* sc = imp.ReadFile(path,
-        aiProcess_Triangulate | aiProcess_GenSmoothNormals | aiProcess_LimitBoneWeights | aiProcess_JoinIdenticalVertices);
+        aiProcess_Triangulate | aiProcess_GenSmoothNormals | aiProcess_LimitBoneWeights | aiProcess_FlipUVs);
     if (!sc || !sc->mRootNode || sc->mNumMeshes == 0) { if (err) *err = imp.GetErrorString(); return false; }
 
     *this = RiggedMesh();
