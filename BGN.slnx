@@ -1,0 +1,9 @@
+<Solution>
+  <Configurations>
+    <Platform Name="x64" />
+  </Configurations>
+  <Folder Name="/App/">
+    <Project Path="sim/Sim.vcxproj" Id="a0000000-0000-0000-0000-000000000001" />
+    <Project Path="editor/Arena.vcxproj" Id="a0000000-0000-0000-0000-000000000002" />
+  </Folder>
+</Solution>

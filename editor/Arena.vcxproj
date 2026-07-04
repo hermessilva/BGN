@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64"><Configuration>Debug</Configuration><Platform>x64</Platform></ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64"><Configuration>Release</Configuration><Platform>x64</Platform></ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>17.0</VCProjectVersion>
+    <ProjectGuid>{A0000000-0000-0000-0000-000000000002}</ProjectGuid>
+    <RootNamespace>Arena</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0.26100.0</WindowsTargetPlatformVersion>
+    <VcpkgRootDir>D:\Tootega\Source\MASS\Deps\vcpkg</VcpkgRootDir>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <PlatformToolset>v145</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)'=='Debug'"><UseDebugLibraries>true</UseDebugLibraries></PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)'=='Release'"><UseDebugLibraries>false</UseDebugLibraries></PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <Import Project="$(VcpkgRootDir)\scripts\buildsystems\msbuild\vcpkg.props" />
+  <Import Project="..\Bgn.props" />
+  <PropertyGroup><TargetName>Arena</TargetName></PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'">
+    <ClCompile><Optimization>Disabled</Optimization><RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary></ClCompile>
+    <Link><SubSystem>Console</SubSystem><AdditionalDependencies>opengl32.lib;comdlg32.lib;shell32.lib;ws2_32.lib;mswsock.lib;%(AdditionalDependencies)</AdditionalDependencies></Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)'=='Release'">
+    <ClCompile><Optimization>MaxSpeed</Optimization><RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary></ClCompile>
+    <Link><SubSystem>Console</SubSystem><AdditionalDependencies>opengl32.lib;comdlg32.lib;shell32.lib;ws2_32.lib;mswsock.lib;%(AdditionalDependencies)</AdditionalDependencies></Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="src\App.cpp" />
+    <ClCompile Include="src\Bootstrap.cpp" />
+    <ClCompile Include="src\MassModel.cpp" />
+    <ClCompile Include="src\Panels.cpp" />
+    <ClCompile Include="src\Renderer.cpp" />
+    <ClCompile Include="src\SimBridge.cpp" />
+    <ClCompile Include="src\SkinGen.cpp" />
+    <ClCompile Include="src\TrainBridge.cpp" />
+    <ClCompile Include="src\main.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="src\App.h" />
+    <ClInclude Include="src\Bootstrap.h" />
+    <ClInclude Include="src\Camera.h" />
+    <ClInclude Include="src\Dialog.h" />
+    <ClInclude Include="src\MassModel.h" />
+    <ClInclude Include="src\Math.h" />
+    <ClInclude Include="src\Renderer.h" />
+    <ClInclude Include="src\SimBridge.h" />
+    <ClInclude Include="src\SkinGen.h" />
+    <ClInclude Include="src\TrainBridge.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="src\SkinGenTriTable.inc" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\sim\Sim.vcxproj"><Project>{A0000000-0000-0000-0000-000000000001}</Project></ProjectReference>
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <Import Project="$(VcpkgRootDir)\scripts\buildsystems\msbuild\vcpkg.targets" />
+</Project>

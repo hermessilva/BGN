@@ -26,6 +26,8 @@ editor/Release/
 editor/Debug/
 *.mass
 editor_tmp/
+Dist/
+*.vcxproj.user
 
 legacy_data/
 

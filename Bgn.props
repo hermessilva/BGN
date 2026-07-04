@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Shared settings for the hand-authored native VS projects (Sim, Arena).
+     Dependency resolution is delegated to vcpkg's MSBuild auto-link (each project
+     imports vcpkg.props / vcpkg.targets), so DART / Bullet / GLFW / imgui /
+     imguizmo / tinyxml2 / nlohmann-json / boost-asio are linked automatically. -->
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <!-- Executables go to Dist\x64\<Config>; static libs stay project-local. -->
+    <OutDir Condition="'$(ConfigurationType)'!='StaticLibrary'">$(MSBuildThisFileDirectory)Dist\x64\$(Configuration)\</OutDir>
+    <OutDir Condition="'$(ConfigurationType)'=='StaticLibrary'">$(ProjectDir)build\$(Platform)\$(Configuration)\</OutDir>
+    <IntDir>$(ProjectDir)build\int\$(ProjectName)\$(Configuration)\</IntDir>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <ConformanceMode>true</ConformanceMode>
+      <AdditionalIncludeDirectories>$(MSBuildThisFileDirectory)sim;$(VcpkgRoot)\installed\x64-windows\include\eigen3;$(VcpkgRoot)\installed\x64-windows\include\bullet;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <!-- Match the CMake recipe DART / fmt / tinyxml2 need to compile cleanly. -->
+      <PreprocessorDefinitions>MASS_ROOT_DIR=&quot;$(MSBuildThisFileDirectory.Replace('\','/'))&quot;;DART_HAVE_spdlog=0;DART_ACTIVE_LOG_LEVEL=2;FMT_HEADER_ONLY=1;TINYXML2_IMPORT;_USE_MATH_DEFINES;NOMINMAX;_WIN32_WINNT=0x0601;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalOptions>/bigobj /utf-8 %(AdditionalOptions)</AdditionalOptions>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+    </ClCompile>
+  </ItemDefinitionGroup>
+</Project>
